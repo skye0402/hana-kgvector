@@ -1,0 +1,4 @@
+onlyBuiltDependencies:
+  - '@sap/hana-client'
+  - esbuild
+  - tree-sitter

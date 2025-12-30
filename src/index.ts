@@ -1,33 +1,12 @@
-import { loadEnv } from "./env";
+export { HanaKGVector } from "./client";
+export type { HanaKGVectorConfig } from "./client";
 
-loadEnv();
+export { loadEnv } from "./env";
 
-export type HanaKGVectorConfig = {
-  hana?: {
-    host?: string;
-    port?: number;
-    user?: string;
-    password?: string;
-    schema?: string;
-  };
-  litellm?: {
-    baseUrl?: string;
-    apiKey?: string;
-  };
-};
+export { createHanaConnection, hanaExec } from "./hana/connection";
+export { HanaSparqlStore } from "./hana/sparql-store";
+export { HanaVectorStore } from "./hana/vector-store";
+export type { HanaConnection, HanaConnectionConfig } from "./hana/types";
 
-export function getConfigFromEnv(): HanaKGVectorConfig {
-  return {
-    hana: {
-      host: process.env.HANA_HOST,
-      port: process.env.HANA_PORT ? Number(process.env.HANA_PORT) : undefined,
-      user: process.env.HANA_USER,
-      password: process.env.HANA_PASSWORD,
-      schema: process.env.HANA_SCHEMA
-    },
-    litellm: {
-      baseUrl: process.env.LITELLM_PROXY_URL,
-      apiKey: process.env.LITELLM_API_KEY
-    }
-  };
-}
+export { SpaceManager } from "./spaces/space-manager";
+export type { Space, SpaceCreateInput } from "./spaces/types";

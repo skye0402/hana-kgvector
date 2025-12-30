@@ -29,6 +29,7 @@ async function main() {
   let hana: any;
   try {
     hana = await import("@sap/hana-client");
+    hana = hana.default || hana;
   } catch {
     console.error(
       "@sap/hana-client is not available. If you use pnpm, you likely need to run `pnpm approve-builds` and reinstall so native modules can build."
@@ -38,24 +39,40 @@ async function main() {
 
   const conn = hana.createConnection();
 
-  await new Promise<void>((resolve, reject) => {
-    conn.connect(
-      {
-        serverNode: `${hostOnly}:${port}`,
-        uid: user,
-        pwd: password,
-        encrypt: true,
-        sslValidateCertificate: true
-      },
-      (err: unknown) => (err ? reject(err) : resolve())
+  try {
+    await new Promise<void>((resolve, reject) => {
+      conn.connect(
+        {
+          serverNode: `${hostOnly}:${port}`,
+          uID: user,
+          pwd: password,
+          encrypt: "true",
+          sslValidateCertificate: "true"
+        },
+        (err: unknown) => (err ? reject(err) : resolve())
+      );
+    });
+  } catch {
+    console.error(
+      "HANA validation failed to connect. Check: (1) host/port reachable, (2) user/password correct, (3) network allowlist/VPN/Cloud Connector as needed."
     );
-  });
+    process.exit(1);
+  }
 
   const sql = "SELECT CURRENT_TIMESTAMP AS now FROM DUMMY";
 
-  const rows: any[] = await new Promise((resolve, reject) => {
-    conn.exec(sql, (err: unknown, result: any) => (err ? reject(err) : resolve(result)));
-  });
+  let rows: any[];
+  try {
+    rows = await new Promise((resolve, reject) => {
+      conn.exec(sql, (err: unknown, result: any) => (err ? reject(err) : resolve(result)));
+    });
+  } catch {
+    console.error(
+      "HANA validation connected but query failed. Check that the user has basic SELECT privileges (DUMMY) and connection is stable."
+    );
+    conn.disconnect();
+    process.exit(1);
+  }
 
   console.log("HANA connection ok. now:", rows?.[0]?.NOW ?? rows?.[0]?.now);
   conn.disconnect();
@@ -63,6 +80,8 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("HANA validation failed:", err);
+  // Avoid dumping raw error objects which may contain sensitive info.
+  console.error("HANA validation failed (unexpected error). See previous output for guidance.");
+  console.error("Error details:", err);
   process.exit(1);
 });

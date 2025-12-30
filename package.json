@@ -23,7 +23,7 @@
     "zod": "^3.23.8"
   },
   "optionalDependencies": {
-    "@sap/hana-client": "*"
+    "@sap/hana-client": "^2.27.19"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
