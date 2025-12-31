@@ -15,7 +15,10 @@ export interface HanaPropertyGraphStoreOptions {
   graphName: string;
   vectorTableName?: string;
   llamaNodesTableName?: string;
+  /** Optional, unused for dimensionless REAL_VECTOR columns (kept for backward compat logging). */
   vectorDimension?: number;
+  /** If true, will DROP and recreate tables on init (intended for tests/dev only). */
+  resetTables?: boolean;
 }
 
 export class HanaPropertyGraphStore implements PropertyGraphStore {
@@ -23,7 +26,7 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
   private readonly graphName: string;
   private readonly vectorTableName: string;
   private readonly llamaNodesTableName: string;
-  private readonly vectorDimension: number;
+  private readonly resetTables: boolean;
   private initialized = false;
 
   readonly supportsVectorQueries = true;
@@ -34,32 +37,53 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
     this.graphName = options.graphName;
     this.vectorTableName = options.vectorTableName ?? `${options.graphName.replace(/[^a-zA-Z0-9]/g, "_")}_VECTORS`;
     this.llamaNodesTableName = options.llamaNodesTableName ?? `${options.graphName.replace(/[^a-zA-Z0-9]/g, "_")}_NODES`;
-    this.vectorDimension = options.vectorDimension ?? 1536;
+    this.resetTables = options.resetTables ?? false;
   }
 
   private async ensureInitialized(): Promise<void> {
     if (this.initialized) return;
 
-    await this.exec(`
-      CREATE TABLE IF NOT EXISTS ${this.vectorTableName} (
+    // Optional destructive reset intended for tests/dev. This is OFF by default.
+    if (this.resetTables) {
+      await this.exec(`DROP TABLE ${this.vectorTableName}`).catch(() => {});
+      await this.exec(`DROP TABLE ${this.llamaNodesTableName}`).catch(() => {});
+    }
+
+    // HANA does not support "IF NOT EXISTS" for CREATE TABLE. We try to create and ignore the
+    // "name exists" error, but surface any other errors.
+    const createVectorTable = `
+      CREATE COLUMN TABLE ${this.vectorTableName} (
         id NVARCHAR(512) PRIMARY KEY,
         node_type NVARCHAR(64),
         label NVARCHAR(128),
         name NVARCHAR(512),
         properties NCLOB,
-        embedding REAL_VECTOR(${this.vectorDimension})
+        embedding REAL_VECTOR
       )
-    `).catch(() => {});
+    `;
+    await this.exec(createVectorTable).catch((err: any) => {
+      const message = String(err?.message ?? "");
+      // Handle "duplicate table name" or "already exists"
+      if (!/exists|duplicate table name/i.test(message)) {
+        throw err;
+      }
+    });
 
-    await this.exec(`
-      CREATE TABLE IF NOT EXISTS ${this.llamaNodesTableName} (
+    const createLlamaTable = `
+      CREATE COLUMN TABLE ${this.llamaNodesTableName} (
         id NVARCHAR(512) PRIMARY KEY,
         text NCLOB,
         metadata NCLOB,
         hash NVARCHAR(64),
-        embedding REAL_VECTOR(${this.vectorDimension})
+        embedding REAL_VECTOR
       )
-    `).catch(() => {});
+    `;
+    await this.exec(createLlamaTable).catch((err: any) => {
+      const message = String(err?.message ?? "");
+      if (!/exists|duplicate table name/i.test(message)) {
+        throw err;
+      }
+    });
 
     this.initialized = true;
   }
@@ -81,16 +105,37 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
   }
 
   private async sparqlExecute(sparql: string, headers = ""): Promise<unknown> {
-    return new Promise((resolve, reject) => {
-      (this.conn as any).exec(
-        "CALL SPARQL_EXECUTE(?, ?, ?, ?)",
-        [sparql, headers, "", null],
-        (err: unknown, result: unknown) => {
-          if (err) reject(err);
-          else resolve(result);
-        }
-      );
-    });
+    // Some HANA environments require OUT parameters (e.g. RESPONSE) to be bound.
+    // The @sap/hana-client driver provides a proc statement helper which correctly
+    // handles OUT params *without* requiring you to pass them in the params array.
+    try {
+      const streamMod = await import("@sap/hana-client/extension/Stream");
+      const Stream = (streamMod as any).default ?? streamMod;
+
+      return await new Promise<unknown>((resolve, reject) => {
+        Stream.createProcStatement(this.conn as any, "CALL SPARQL_EXECUTE(?, ?, ?, ?)", (err: any, stmt: any) => {
+          if (err) return reject(err);
+          stmt.exec([sparql, headers], (err2: any, scalarParams: any) => {
+            // scalarParams contains OUT params by name (e.g. RESPONSE)
+            if (err2) return reject(err2);
+            resolve(scalarParams);
+          });
+        });
+      });
+    } catch {
+      // Fallback (may fail on systems requiring bound OUT params)
+      return await new Promise<unknown>((resolve, reject) => {
+        (this.conn as any).exec(
+          "CALL SPARQL_EXECUTE(?, ?, ?, ?)",
+          // Important: only pass IN params; OUT params are placeholders in SQL.
+          [sparql, headers],
+          (err: unknown, result: unknown) => {
+            if (err) reject(err);
+            else resolve(result);
+          }
+        );
+      });
+    }
   }
 
   private entityToUri(node: EntityNode): string {
@@ -134,6 +179,11 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
 
     for (const node of nodes) {
       if (node.embedding) {
+        // Defensive: prevent circular references from being serialized into NCLOB
+        const safeProps: Record<string, unknown> = { ...(node.properties ?? {}) };
+        delete (safeProps as any).kg_nodes;
+        delete (safeProps as any).kg_relations;
+
         const sql = `
           UPSERT ${this.vectorTableName} (id, node_type, label, name, properties, embedding)
           VALUES (?, 'entity', ?, ?, ?, TO_REAL_VECTOR(?))
@@ -143,7 +193,7 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
           node.id,
           node.label,
           node.name,
-          JSON.stringify(node.properties),
+          JSON.stringify(safeProps),
           JSON.stringify(node.embedding),
         ]);
       }
@@ -322,6 +372,12 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
   async upsertLlamaNodes(nodes: LlamaNode[]): Promise<void> {
     await this.ensureInitialized();
     for (const node of nodes) {
+      // Remove circular references from metadata before serialization
+      const { metadata, ...rest } = node;
+      const safeMetadata = { ...metadata };
+      delete (safeMetadata as any).kg_nodes;
+      delete (safeMetadata as any).kg_relations;
+
       const sql = `
         UPSERT ${this.llamaNodesTableName} (id, text, metadata, hash, embedding)
         VALUES (?, ?, ?, ?, ${node.embedding ? "TO_REAL_VECTOR(?)" : "NULL"})
@@ -330,7 +386,7 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
       const params: unknown[] = [
         node.id,
         node.text,
-        JSON.stringify(node.metadata),
+        JSON.stringify(safeMetadata ?? {}),
         node.hash ?? null,
       ];
       if (node.embedding) {

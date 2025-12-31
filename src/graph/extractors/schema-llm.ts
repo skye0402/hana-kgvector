@@ -157,10 +157,15 @@ export class SchemaLLMPathExtractor implements TransformComponent {
     const existingNodes = (node.metadata[KG_NODES_KEY] as EntityNode[]) ?? [];
     const existingRelations = (node.metadata[KG_RELATIONS_KEY] as Relation[]) ?? [];
 
+    // Avoid copying kg_nodes/kg_relations into node properties (can create circular refs)
+    const safeMetadata: Record<string, unknown> = { ...node.metadata };
+    delete safeMetadata[KG_NODES_KEY];
+    delete safeMetadata[KG_RELATIONS_KEY];
+
     for (const [subj, rel, obj] of triplets) {
-      subj.properties = { ...subj.properties, ...node.metadata };
-      obj.properties = { ...obj.properties, ...node.metadata };
-      rel.properties = { ...rel.properties, ...node.metadata };
+      subj.properties = { ...subj.properties, ...safeMetadata };
+      obj.properties = { ...obj.properties, ...safeMetadata };
+      rel.properties = { ...rel.properties, ...safeMetadata };
 
       existingNodes.push(subj);
       existingNodes.push(obj);

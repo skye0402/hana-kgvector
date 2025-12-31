@@ -6,7 +6,8 @@ export async function createHanaConnection(
 ): Promise<HanaConnection> {
   let hana: any;
   try {
-    hana = await import("@sap/hana-client");
+    const hanaModule = await import("@sap/hana-client");
+    hana = (hanaModule as any).default || hanaModule;
   } catch {
     throw new Error(
       "@sap/hana-client is not available. Ensure it is installed and pnpm build scripts are approved (pnpm approve-builds)."

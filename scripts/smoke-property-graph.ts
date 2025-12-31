@@ -59,12 +59,22 @@ async function main() {
     process.exit(0);
   }
 
+  console.log("Embedding model: ", process.env.DEFAULT_EMBEDDING_MODEL);
+  console.log("LLM model: ", process.env.DEFAULT_LLM_MODEL);
+  
   const conn = await createHanaConnection({ host, user, password });
   console.log("Connected to HANA.");
 
+  // Detect embedding dimension dynamically to align with HANA REAL_VECTOR column
+  const probe = await embedModel.getTextEmbedding("dimension-probe");
+  const vectorDimension = probe.length;
+  console.log(`Embedding dimension: ${vectorDimension}`);
+
   const graphStore = new HanaPropertyGraphStore(conn, {
     graphName: "urn:hkv:smoke_test",
-    vectorDimension: 1536,
+    vectorTableName: "URN_HKV_SMOKE_TEST_VECTORS",
+    llamaNodesTableName: "URN_HKV_SMOKE_TEST_NODES",
+    resetTables: true,
   });
 
   const index = new PropertyGraphIndex({
@@ -91,30 +101,28 @@ async function main() {
     showProgress: true,
   });
 
-  console.log("Inserting sample documents...");
+  for (let i = 1; i <= 3; i++) {
+    console.log(`Run ${i}/3: inserting sample documents...`);
 
-  await index.insert([
-    {
-      id: "doc_1",
-      text: "Alice works at SAP in Walldorf. She knows Bob who also works at SAP. SAP produces enterprise software.",
-      metadata: { documentId: "sample_doc" },
-    },
-    {
-      id: "doc_2",
-      text: "Bob is a software engineer at SAP. He collaborates with Carol from Microsoft in Seattle.",
-      metadata: { documentId: "sample_doc" },
-    },
-  ]);
+    await index.insert([
+      {
+        id: `doc_1_run_${i}`,
+        text: "Alice works at SAP in Walldorf. She knows Bob who also works at SAP. SAP produces enterprise software.",
+        metadata: { documentId: `sample_doc_${i}` },
+      },
+      {
+        id: `doc_2_run_${i}`,
+        text: "Bob is a software engineer at SAP. He collaborates with Carol from Microsoft in Seattle.",
+        metadata: { documentId: `sample_doc_${i}` },
+      },
+    ]);
+
+    console.log(`Run ${i}/3: querying the graph...`);
+    const results = await index.query("Who works at SAP?");
+    console.log(`Run ${i}/3: found ${results.length} results`);
+  }
 
   console.log("Documents inserted.");
-
-  console.log("Querying the graph...");
-  const results = await index.query("Who works at SAP?");
-
-  console.log(`Found ${results.length} results:`);
-  for (const result of results.slice(0, 5)) {
-    console.log(`  - [${result.score.toFixed(3)}] ${result.node.text.slice(0, 100)}...`);
-  }
 
   console.log("Smoke test complete.");
   conn.disconnect();

@@ -10,12 +10,16 @@ export class ImplicitPathExtractor implements TransformComponent {
       const existingNodes = (node.metadata[KG_NODES_KEY] as EntityNode[]) ?? [];
       const existingRelations = (node.metadata[KG_RELATIONS_KEY] as Relation[]) ?? [];
 
+      const safeMetadata: Record<string, unknown> = { ...node.metadata };
+      delete safeMetadata[KG_NODES_KEY];
+      delete safeMetadata[KG_RELATIONS_KEY];
+
       const chunkNode = createEntityNode({
         label: "CHUNK",
         name: node.id,
         properties: {
           text: node.text.slice(0, 500),
-          ...node.metadata,
+          ...safeMetadata,
         },
       });
 
