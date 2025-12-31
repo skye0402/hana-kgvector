@@ -10,3 +10,5 @@ export type { HanaConnection, HanaConnectionConfig } from "./hana/types";
 
 export { SpaceManager } from "./spaces/space-manager";
 export type { Space, SpaceCreateInput } from "./spaces/types";
+
+export * from "./graph";

@@ -14,7 +14,8 @@
     "dev": "tsx src/index.ts",
     "phase0:llamaindex": "tsx scripts/validate-llamaindex.ts",
     "phase0:litellm": "tsx scripts/validate-litellm.ts",
-    "phase0:hana": "tsx scripts/validate-hana.ts"
+    "phase0:hana": "tsx scripts/validate-hana.ts",
+    "smoke:pg": "tsx scripts/smoke-property-graph.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
