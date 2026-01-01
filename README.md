@@ -46,7 +46,6 @@ DEFAULT_EMBEDDING_MODEL=text-embedding-3-small
 
 ```typescript
 import {
-  loadEnv,
   createHanaConnection,
   HanaPropertyGraphStore,
   PropertyGraphIndex,
@@ -55,8 +54,8 @@ import {
 } from "hana-kgvector";
 import OpenAI from "openai";
 
-// Load environment
-loadEnv();
+// Load environment variables (user should handle this in their application)
+// Example: dotenv.config({ path: ".env.local" });
 
 // Connect to HANA
 const conn = await createHanaConnection({

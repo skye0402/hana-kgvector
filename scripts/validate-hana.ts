@@ -1,6 +1,6 @@
-import { loadEnv } from "../src/env";
+import dotenv from "dotenv";
 
-loadEnv();
+dotenv.config({ path: ".env.local" });
 
 function parseHostPort(host: string, fallbackPort: number): { host: string; port: number } {
   const idx = host.lastIndexOf(":");

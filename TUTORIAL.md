@@ -74,12 +74,12 @@ import "dotenv/config";
 
 ```typescript
 import {
-  loadEnv,
   createHanaConnection,
 } from "hana-kgvector";
+import dotenv from "dotenv";
 
 // Load environment variables
-loadEnv();
+dotenv.config({ path: ".env.local" });
 
 async function main() {
   // Connect to HANA Cloud
@@ -108,7 +108,6 @@ The `PropertyGraphIndex` is the main entry point. It needs:
 
 ```typescript
 import {
-  loadEnv,
   createHanaConnection,
   HanaPropertyGraphStore,
   PropertyGraphIndex,
@@ -116,8 +115,9 @@ import {
   ImplicitPathExtractor,
 } from "hana-kgvector";
 import OpenAI from "openai";
+import dotenv from "dotenv";
 
-loadEnv();
+dotenv.config({ path: ".env.local" });
 
 async function main() {
   const conn = await createHanaConnection({
@@ -465,7 +465,6 @@ Here's a complete working example:
 ```typescript
 import "dotenv/config";
 import {
-  loadEnv,
   createHanaConnection,
   HanaPropertyGraphStore,
   PropertyGraphIndex,
@@ -474,7 +473,7 @@ import {
 } from "hana-kgvector";
 import OpenAI from "openai";
 
-loadEnv();
+// Environment variables already loaded by dotenv/config
 
 async function main() {
   // 1. Connect

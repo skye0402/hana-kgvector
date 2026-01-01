@@ -10,7 +10,6 @@
  * Run: pnpm exec tsx scripts/test-quality.ts
  */
 
-import { loadEnv } from "../src/env";
 import { createHanaConnection } from "../src/hana/connection";
 import {
   HanaPropertyGraphStore,
@@ -22,8 +21,9 @@ import {
 import { KG_NODES_KEY, KG_RELATIONS_KEY } from "../src/graph/types";
 import type { EntityNode, Relation } from "../src/graph/types";
 import OpenAI from "openai";
+import dotenv from "dotenv";
 
-loadEnv();
+dotenv.config({ path: ".env.local" });
 
 // ============================================================================
 // TEST CONFIGURATION

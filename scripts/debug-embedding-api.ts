@@ -2,10 +2,10 @@
  * Debug script to test embedding API directly
  */
 
-import { loadEnv } from "../src/env";
 import OpenAI from "openai";
+import dotenv from "dotenv";
 
-loadEnv();
+dotenv.config({ path: ".env.local" });
 
 async function main() {
   console.log("=== Embedding API Debug ===\n");

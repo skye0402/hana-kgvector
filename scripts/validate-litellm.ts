@@ -1,7 +1,7 @@
 import OpenAI from "openai";
-import { loadEnv } from "../src/env";
+import dotenv from "dotenv";
 
-loadEnv();
+dotenv.config({ path: ".env.local" });
 
 function safeFail(message: string): never {
   console.error(message);

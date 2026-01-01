@@ -1,4 +1,3 @@
-import { loadEnv } from "../src/env";
 import { createHanaConnection } from "../src/hana/connection";
 import {
   HanaPropertyGraphStore,
@@ -9,8 +8,9 @@ import {
   createRelation,
 } from "../src/graph";
 import OpenAI from "openai";
+import dotenv from "dotenv";
 
-loadEnv();
+dotenv.config({ path: ".env.local" });
 
 const openai = new OpenAI({
   apiKey: process.env.LITELLM_API_KEY ?? "any-key",
