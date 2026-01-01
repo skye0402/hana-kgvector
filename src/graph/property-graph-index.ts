@@ -137,6 +137,14 @@ export class PropertyGraphIndex {
   asRetriever(options?: {
     subRetrievers?: Array<{ retrieve(query: QueryBundle): Promise<NodeWithScore[]> }>;
     includeText?: boolean;
+    /** Number of top similar nodes to retrieve via vector search (default: 4) */
+    similarityTopK?: number;
+    /** Graph traversal depth from matched nodes (default: 1) */
+    pathDepth?: number;
+    /** Maximum number of triplets to return after expansion (default: 30) */
+    limit?: number;
+    /** Minimum similarity score threshold to include results (default: no threshold) */
+    similarityScore?: number;
   }): PGRetriever {
     let subRetrievers = options?.subRetrievers as any[];
 
@@ -146,6 +154,10 @@ export class PropertyGraphIndex {
           graphStore: this.propertyGraphStore,
           embedModel: this.embedModel,
           includeText: options?.includeText ?? true,
+          similarityTopK: options?.similarityTopK,
+          pathDepth: options?.pathDepth,
+          limit: options?.limit,
+          similarityScore: options?.similarityScore,
         }),
       ];
     }
@@ -157,8 +169,17 @@ export class PropertyGraphIndex {
     return new PGRetriever({ subRetrievers });
   }
 
-  async query(queryStr: string): Promise<NodeWithScore[]> {
-    const retriever = this.asRetriever();
+  async query(queryStr: string, options?: {
+    /** Number of top similar nodes to retrieve via vector search (default: 4) */
+    similarityTopK?: number;
+    /** Graph traversal depth from matched nodes (default: 1) */
+    pathDepth?: number;
+    /** Maximum number of triplets to return after expansion (default: 30) */
+    limit?: number;
+    /** Minimum similarity score threshold to include results (default: no threshold) */
+    similarityScore?: number;
+  }): Promise<NodeWithScore[]> {
+    const retriever = this.asRetriever(options);
     return retriever.retrieve({ queryStr });
   }
 }

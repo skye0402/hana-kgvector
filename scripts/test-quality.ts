@@ -547,20 +547,32 @@ async function main() {
   logSubsection("Checking RDF triples in Knowledge Graph");
 
   try {
-    const sparqlCountResult = await new Promise<any[]>((resolve, reject) => {
+    // Option B: Count rows by selecting actual triples. This avoids relying on SPARQL aggregation
+    // (which can be finicky through SPARQL_TABLE depending on engine/version).
+    const MAX_TRIPLES_TO_SAMPLE = 200;
+    const sparql = `SELECT ?s ?p ?o FROM <urn:hkv:quality_test> WHERE { ?s ?p ?o } LIMIT ${MAX_TRIPLES_TO_SAMPLE}`;
+
+    const rows = await new Promise<any[]>((resolve, reject) => {
       (conn as any).exec(
-        `SELECT COUNT(*) AS cnt FROM SPARQL_TABLE('SELECT (COUNT(*) AS ?count) FROM <urn:hkv:quality_test> WHERE { ?s ?p ?o }')`,
+        `SELECT * FROM SPARQL_TABLE('${sparql.replace(/'/g, "''")}')`,
         (err: unknown, result: unknown) => (err ? reject(err) : resolve(result as any[]))
       );
     });
-    const tripleCount = sparqlCountResult[0]?.CNT ?? sparqlCountResult[0]?.cnt ?? sparqlCountResult[0]?.COUNT ?? 0;
-    log(`RDF triples in graph: ${tripleCount}`);
+
+    const tripleCountObserved = rows?.length ?? 0;
+    const truncated = tripleCountObserved >= MAX_TRIPLES_TO_SAMPLE;
+    const countMsg = truncated
+      ? `>=${MAX_TRIPLES_TO_SAMPLE} (sample limit reached)`
+      : `${tripleCountObserved}`;
+    log(`RDF triples in graph (observed): ${countMsg}`);
 
     addResult(
       "RDF triples stored in Knowledge Graph",
-      tripleCount > 0,
-      `${tripleCount} triples in named graph`,
-      Math.min(tripleCount / 20, 1)
+      tripleCountObserved > 0,
+      truncated
+        ? `At least ${MAX_TRIPLES_TO_SAMPLE} triples (sampled)`
+        : `${tripleCountObserved} triples in named graph`,
+      Math.min(tripleCountObserved / 20, 1)
     );
   } catch (err) {
     log(`Warning: Could not count triples (SPARQL_TABLE may not be available): ${err}`);

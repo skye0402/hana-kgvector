@@ -11,6 +11,8 @@ A TypeScript framework for building **hybrid GraphRAG** applications using SAP H
 - **Multi-Tenancy**: Isolate data into logical "Spaces" for different domains
 - **LLM Agnostic**: Works with any LLM via LiteLLM proxy (OpenAI, Anthropic, Azure, etc.)
 
+> 📚 **New to hana-kgvector?** Check out the [Step-by-Step Tutorial](./TUTORIAL.md) for a complete guide.
+
 ## Installation
 
 ```bash
@@ -248,6 +250,74 @@ Retrieve relevant context from the graph.
 | `VectorContextRetriever` | Vector similarity → graph traversal |
 | `PGRetriever` | Orchestrates multiple sub-retrievers |
 
+## Configuration Reference
+
+### HanaPropertyGraphStore Options
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `graphName` | `string` | Required | RDF named graph identifier (e.g., `"my_knowledge_graph"`) |
+| `vectorTableName` | `string` | Auto-generated | Custom table name for vector storage |
+| `llamaNodesTableName` | `string` | Auto-generated | Custom table name for document nodes |
+| `resetTables` | `boolean` | `false` | Drop and recreate tables on init (dev/test only) |
+
+### PropertyGraphIndex Options
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `propertyGraphStore` | `PropertyGraphStore` | Required | HANA-backed graph store instance |
+| `embedModel` | `EmbedModel` | - | Embedding model for vector search |
+| `kgExtractors` | `TransformComponent[]` | `[ImplicitPathExtractor]` | Pipeline of entity/relation extractors |
+| `embedKgNodes` | `boolean` | `true` | Generate embeddings for extracted entity nodes |
+| `showProgress` | `boolean` | `false` | Log progress during extraction |
+
+### Query/Retrieval Options
+
+These options can be passed to `index.query()` or `index.asRetriever()`:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `similarityTopK` | `number` | `4` | Number of top similar nodes to retrieve via vector search |
+| `pathDepth` | `number` | `1` | Graph traversal depth (hops) from matched nodes |
+| `limit` | `number` | `30` | Maximum triplets/results to return after graph expansion |
+| `similarityScore` | `number` | - | Minimum similarity threshold (0.0-1.0) to filter results |
+
+**Example:**
+
+```typescript
+// Retrieve more results with deeper graph traversal
+const results = await index.query("Tech companies in California", {
+  similarityTopK: 10,    // More initial matches
+  pathDepth: 2,          // Traverse 2 hops
+  limit: 50,             // Return up to 50 results
+  similarityScore: 0.5,  // Only results with score >= 0.5
+});
+```
+
+### SchemaLLMPathExtractor Options
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `llm` | `LLMClient` | Required | LLM client for entity extraction |
+| `schema.entityTypes` | `string[]` | Required | Allowed entity types (e.g., `["PERSON", "ORG"]`) |
+| `schema.relationTypes` | `string[]` | Required | Allowed relation types (e.g., `["WORKS_AT"]`) |
+| `schema.validationSchema` | `[string,string,string][]` | - | Valid triplet patterns (e.g., `["PERSON", "WORKS_AT", "ORG"]`) |
+| `maxTripletsPerChunk` | `number` | `10` | Max entities/relations to extract per document |
+| `strict` | `boolean` | `true` | Only allow relations defined in validationSchema |
+| `extractPromptTemplate` | `string` | Built-in | Custom prompt template for extraction |
+
+### VectorContextRetriever Options
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `graphStore` | `PropertyGraphStore` | Required | Graph store instance |
+| `embedModel` | `EmbedModel` | Required | Embedding model for query embedding |
+| `similarityTopK` | `number` | `4` | Number of top similar nodes |
+| `pathDepth` | `number` | `1` | Graph traversal depth |
+| `limit` | `number` | `30` | Max results after expansion |
+| `similarityScore` | `number` | - | Minimum similarity threshold |
+| `includeText` | `boolean` | `true` | Include source text in results |
+
 ## Space Management
 
 Isolate data into logical spaces for multi-tenancy.
@@ -352,8 +422,8 @@ The quality test suite validates entity extraction, vector retrieval, and graph 
 | Relation Extraction | 100% |
 | Vector Retrieval Relevance | 100% |
 | Graph Traversal | 100% |
-| Data Persistence | 100% |
-| **Overall** | **91%** |
+| Data Persistence (Vectors + RDF Triples) | 100% |
+| **Overall** | **97.3%** |
 
 ## License
 

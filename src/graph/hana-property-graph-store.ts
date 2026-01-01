@@ -47,6 +47,10 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
     if (this.resetTables) {
       await this.exec(`DROP TABLE ${this.vectorTableName}`).catch(() => {});
       await this.exec(`DROP TABLE ${this.llamaNodesTableName}`).catch(() => {});
+
+      // Also clear the RDF named graph to avoid accumulating triples across test runs.
+      // (Tables are recreated, but the KG graph would otherwise persist.)
+      await this.sparqlExecute(`CLEAR GRAPH <${this.graphName}>`).catch(() => {});
     }
 
     // HANA does not support "IF NOT EXISTS" for CREATE TABLE. We try to create and ignore the
