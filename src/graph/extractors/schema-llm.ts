@@ -28,7 +28,22 @@ Text:
 {text}
 -------
 
-Extract entities and relationships from the text above.`;
+Extract entities and relationships from the text above.
+Return your answer as a JSON object with a "triplets" array. Each triplet should have:
+- "subject": { "name": string, "type": one of [{entityTypes}] }
+- "relation": { "type": one of [{relationTypes}] }
+- "object": { "name": string, "type": one of [{entityTypes}] }
+
+Example output format:
+{
+  "triplets": [
+    {
+      "subject": { "name": "John", "type": "PERSON" },
+      "relation": { "type": "WORKS_AT" },
+      "object": { "name": "Acme Corp", "type": "ORGANIZATION" }
+    }
+  ]
+}`;
 
 export class SchemaLLMPathExtractor implements TransformComponent {
   private readonly llm: LLMClient;
@@ -150,7 +165,9 @@ export class SchemaLLMPathExtractor implements TransformComponent {
     try {
       const result = await this.llm.structuredPredict(this.tripletSchema, prompt);
       triplets = this.pruneInvalidTriplets(result);
-    } catch {
+    } catch (err) {
+      // Log extraction errors for debugging
+      console.warn(`[SchemaLLMPathExtractor] Failed to extract from node ${node.id}:`, err);
       triplets = [];
     }
 

@@ -42,8 +42,8 @@ export class PropertyGraphIndex {
     return createHash("md5").update(text).digest("hex");
   }
 
-  async insert(nodes: TextNode[]): Promise<void> {
-    if (nodes.length === 0) return;
+  async insert(nodes: TextNode[]): Promise<TextNode[]> {
+    if (nodes.length === 0) return [];
 
     let processedNodes = nodes;
     for (const extractor of this.kgExtractors) {
@@ -126,6 +126,8 @@ export class PropertyGraphIndex {
     if (kgRelsToInsert.length > 0) {
       await this.propertyGraphStore.upsertRelations(kgRelsToInsert);
     }
+
+    return processedNodes;
   }
 
   async delete(nodeIds: string[]): Promise<void> {

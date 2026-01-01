@@ -22,6 +22,7 @@ const embedModel = {
     const res = await openai.embeddings.create({
       model: process.env.DEFAULT_EMBEDDING_MODEL ?? "text-embedding-3-small",
       input: text,
+      encoding_format: "base64",
     });
     return res.data[0].embedding;
   },
@@ -30,6 +31,7 @@ const embedModel = {
     const res = await openai.embeddings.create({
       model: process.env.DEFAULT_EMBEDDING_MODEL ?? "text-embedding-3-small",
       input: texts,
+      encoding_format: "base64",
     });
     return res.data.map((d) => d.embedding);
   },
