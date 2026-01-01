@@ -318,8 +318,15 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
   }
 
   private extractIdFromUri(uri: string): string {
-    const match = uri.match(/urn:hkv:[^:]+:[^:]+:(.+)>?$/);
-    return match ? decodeURIComponent(match[1].replace(/>$/, "")) : uri;
+    // URI format: <urn:hkv:graphName:label:id> or just the content without angle brackets
+    // The ID is the last segment after the label (second-to-last segment)
+    const cleanUri = uri.replace(/^<|>$/g, "");
+    const parts = cleanUri.split(":");
+    // ID is the last part, decode it
+    if (parts.length >= 2) {
+      return decodeURIComponent(parts[parts.length - 1]);
+    }
+    return uri;
   }
 
   private extractRelLabelFromUri(uri: string): string {
