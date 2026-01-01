@@ -14,5 +14,5 @@
     "sourceMap": true,
     "outDir": "dist"
   },
-  "include": ["src", "scripts", "vitest.config.ts", "tsup.config.ts"]
+  "include": ["src", "vitest.config.ts", "tsup.config.ts"]
 }

@@ -1,25 +1,46 @@
 {
   "name": "hana-kgvector",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.1.1",
+  "description": "A TypeScript framework for building hybrid GraphRAG applications using SAP HANA Cloud as the unified backend for knowledge graphs (RDF) and vector embeddings",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
+  "keywords": [
+    "sap-hana",
+    "knowledge-graph",
+    "vector-database",
+    "graph-rag",
+    "llm",
+    "embeddings",
+    "rdf",
+    "sparql",
+    "typescript"
+  ],
+  "author": "skye0402",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/skye0402/hana-kgvector.git"
+  },
+  "bugs": {
+    "url": "https://github.com/skye0402/hana-kgvector/issues"
+  },
+  "homepage": "https://github.com/skye0402/hana-kgvector#readme",
   "scripts": {
     "build": "tsup",
     "test": "vitest",
     "dev": "tsx src/index.ts",
-    "phase0:llamaindex": "tsx scripts/validate-llamaindex.ts",
     "phase0:litellm": "tsx scripts/validate-litellm.ts",
     "phase0:hana": "tsx scripts/validate-hana.ts",
     "smoke:pg": "tsx scripts/smoke-property-graph.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
-    "llamaindex": "*",
     "openai": "^4.0.0",
     "zod": "^3.23.8"
   },

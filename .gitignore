@@ -10,3 +10,5 @@ coverage
 .vscode
 !.vscode/launch.json
 .idea
+
+*.tgz
