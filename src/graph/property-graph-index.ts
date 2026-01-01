@@ -145,6 +145,10 @@ export class PropertyGraphIndex {
     limit?: number;
     /** Minimum similarity score threshold to include results (default: no threshold) */
     similarityScore?: number;
+    /** Enable cross-check boosting: boost scores when vector-matched entities link to graph facts (default: true) */
+    crossCheckBoost?: boolean;
+    /** Multiplier for cross-check boost (default: 1.25 = 25% boost) */
+    crossCheckBoostFactor?: number;
   }): PGRetriever {
     let subRetrievers = options?.subRetrievers as any[];
 
@@ -158,6 +162,8 @@ export class PropertyGraphIndex {
           pathDepth: options?.pathDepth,
           limit: options?.limit,
           similarityScore: options?.similarityScore,
+          crossCheckBoost: options?.crossCheckBoost,
+          crossCheckBoostFactor: options?.crossCheckBoostFactor,
         }),
       ];
     }
@@ -178,6 +184,10 @@ export class PropertyGraphIndex {
     limit?: number;
     /** Minimum similarity score threshold to include results (default: no threshold) */
     similarityScore?: number;
+    /** Enable cross-check boosting: boost scores when vector-matched entities link to graph facts (default: true) */
+    crossCheckBoost?: boolean;
+    /** Multiplier for cross-check boost (default: 1.25 = 25% boost) */
+    crossCheckBoostFactor?: number;
   }): Promise<NodeWithScore[]> {
     const retriever = this.asRetriever(options);
     return retriever.retrieve({ queryStr });

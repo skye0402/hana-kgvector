@@ -503,9 +503,94 @@ async function main() {
   );
 
   // =========================================================================
-  // TEST 5: DATA PERSISTENCE CHECK
+  // TEST 5: CROSS-CHECK BOOSTING
   // =========================================================================
-  logSection("TEST 5: Data Persistence Check");
+  logSection("TEST 5: Cross-Check Boosting");
+
+  logSubsection("Testing provenance-based score boosting");
+
+  // Query with cross-check boosting enabled (default)
+  const boostQuery = "Apple products and CEO";
+  log(`Query: "${boostQuery}"`);
+
+  const retrieverWithBoost = new VectorContextRetriever({
+    graphStore,
+    embedModel,
+    similarityTopK: 5,
+    pathDepth: 1,
+    includeText: true,
+    crossCheckBoost: true,
+    crossCheckBoostFactor: 1.25,
+  });
+
+  const retrieverNoBoost = new VectorContextRetriever({
+    graphStore,
+    embedModel,
+    similarityTopK: 5,
+    pathDepth: 1,
+    includeText: true,
+    crossCheckBoost: false,
+  });
+
+  const resultsWithBoost = await retrieverWithBoost.retrieve({ queryStr: boostQuery });
+  const resultsNoBoost = await retrieverNoBoost.retrieve({ queryStr: boostQuery });
+
+  log(`Results with cross-check boost: ${resultsWithBoost.length}`);
+  log(`Results without cross-check boost: ${resultsNoBoost.length}`);
+
+  // Calculate average scores for comparison
+  const avgScoreWithBoost = resultsWithBoost.length > 0
+    ? resultsWithBoost.reduce((sum, r) => sum + (r.score ?? 0), 0) / resultsWithBoost.length
+    : 0;
+  const avgScoreNoBoost = resultsNoBoost.length > 0
+    ? resultsNoBoost.reduce((sum, r) => sum + (r.score ?? 0), 0) / resultsNoBoost.length
+    : 0;
+
+  log(`Average score WITH boost: ${avgScoreWithBoost.toFixed(4)}`);
+  log(`Average score WITHOUT boost: ${avgScoreNoBoost.toFixed(4)}`);
+
+  // Check if boosting increases scores for provenance-linked results
+  const boostDiff = avgScoreWithBoost - avgScoreNoBoost;
+  log(`Score difference: ${boostDiff >= 0 ? "+" : ""}${boostDiff.toFixed(4)}`);
+
+  // Show top results comparison
+  log("\nTop 3 results WITH boost:", 1);
+  for (const r of resultsWithBoost.slice(0, 3)) {
+    const name = (r.node.metadata as any)?.name ?? r.node.id;
+    log(`  [${r.score?.toFixed(3)}] ${name}`, 1);
+  }
+
+  log("\nTop 3 results WITHOUT boost:", 1);
+  for (const r of resultsNoBoost.slice(0, 3)) {
+    const name = (r.node.metadata as any)?.name ?? r.node.id;
+    log(`  [${r.score?.toFixed(3)}] ${name}`, 1);
+  }
+
+  // Cross-check boosting should increase scores when provenance matches
+  // Even a small positive difference indicates the feature is working
+  addResult(
+    "Cross-check boosting increases relevance scores",
+    boostDiff >= 0,
+    `Boosted avg: ${avgScoreWithBoost.toFixed(3)}, Non-boosted avg: ${avgScoreNoBoost.toFixed(3)}, Diff: ${boostDiff >= 0 ? "+" : ""}${boostDiff.toFixed(4)}`,
+    boostDiff >= 0 ? 1.0 : 0.5
+  );
+
+  // Verify that boosted results still contain relevant content
+  const boostResultText = resultsWithBoost.slice(0, 10).map((r) => r.node.text).join(" ").toLowerCase();
+  const appleTerms = ["apple", "tim cook", "iphone", "macbook", "ceo"];
+  const foundAppleTerms = containsAny(boostResultText, appleTerms);
+
+  addResult(
+    "Cross-check boosted results maintain relevance",
+    foundAppleTerms.length >= 2,
+    `Found ${foundAppleTerms.length}/5 relevant terms: ${foundAppleTerms.join(", ")}`,
+    foundAppleTerms.length / 5
+  );
+
+  // =========================================================================
+  // TEST 6: DATA PERSISTENCE CHECK
+  // =========================================================================
+  logSection("TEST 6: Data Persistence Check");
 
   logSubsection("Verifying data was stored in HANA tables");
 

@@ -611,10 +611,10 @@ The hybrid retriever combines vector similarity and graph traversal, with **cros
 │  ├─────────────────────────────────────────────────────────────────────┤    │
 │  │                                                                     │    │
 │  │  Thread A (Vector)              Thread B (Graph)                    │    │
-│  │  ┌─────────────────┐            ┌─────────────────┐                 │    │
-│  │  │ COSINE_SIMILARITY│            │ Extract Entities│                 │    │
-│  │  │ on query embed   │            │ "HANA DB", "FI" │                 │    │
-│  │  └────────┬────────┘            └────────┬────────┘                 │    │
+│  │  ┌───────────────────┐            ┌─────────────────┐               │    │
+│  │  │ COSINE_SIMILARITY │            │ Extract Entities│               │    │
+│  │  │ on query embed    │            │ "HANA DB", "FI" │               │    │
+│  │  └────────┬──────────┘            └────────┬────────┘               │    │
 │  │           │                              │                          │    │
 │  │           ▼                              ▼                          │    │
 │  │  [Chunk A, Chunk B]             SPARQL: ?neighbor of entities       │    │

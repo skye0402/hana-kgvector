@@ -301,6 +301,26 @@ console.log(`Found ${results.length} results`);
 | `pathDepth` | 1 | How many hops to traverse in the knowledge graph from matched nodes |
 | `limit` | 30 | Maximum number of triplets/results to return after graph expansion |
 | `similarityScore` | - | Minimum similarity threshold (0.0-1.0). Results below this are filtered out |
+| `crossCheckBoost` | true | Enable cross-check boosting for better relevance |
+| `crossCheckBoostFactor` | 1.25 | Score multiplier when provenance matches (25% boost) |
+
+### Cross-Check Boosting
+
+Cross-check boosting improves retrieval quality by combining vector similarity with graph provenance:
+
+1. **Vector search** finds semantically similar entity nodes
+2. **Graph traversal** expands to find related facts
+3. **Cross-check**: If a fact originated from the same document as a vector-matched entity, boost its score
+
+This rewards results that are **both semantically relevant AND have explicit graph connections**.
+
+```typescript
+// Disable cross-check boosting for raw vector scores
+const results = await index.query("Apple CEO", { crossCheckBoost: false });
+
+// Increase boost factor for stronger provenance preference
+const results = await index.query("Apple CEO", { crossCheckBoostFactor: 1.5 });
+```
 
 ### When to adjust these parameters:
 
@@ -357,28 +377,33 @@ const extractor = new SchemaLLMPathExtractor({
 });
 ```
 
-### Multi-Tenancy with Spaces
+### Multi-Tenancy
 
-Isolate data for different domains or tenants:
+Isolate data for different domains or tenants using separate graph names:
 
 ```typescript
-import { SpaceManager } from "hana-kgvector";
-
-const spaces = new SpaceManager(conn);
-
-// Create isolated spaces
-await spaces.create({ id: "finance", name: "Finance Data" });
-await spaces.create({ id: "hr", name: "HR Data" });
-
-// Create separate graph stores for each space
+// Tenant 1: Finance data
 const financeStore = new HanaPropertyGraphStore(conn, {
   graphName: "finance_graph",
 });
+const financeIndex = new PropertyGraphIndex({
+  propertyGraphStore: financeStore,
+  embedModel,
+  kgExtractors: [...],
+});
 
+// Tenant 2: HR data (completely isolated)
 const hrStore = new HanaPropertyGraphStore(conn, {
   graphName: "hr_graph",
 });
+const hrIndex = new PropertyGraphIndex({
+  propertyGraphStore: hrStore,
+  embedModel,
+  kgExtractors: [...],
+});
 ```
+
+Each `graphName` creates a separate RDF named graph and vector table.
 
 ### Resetting Data (Development Only)
 

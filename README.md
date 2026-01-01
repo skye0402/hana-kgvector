@@ -281,6 +281,8 @@ These options can be passed to `index.query()` or `index.asRetriever()`:
 | `pathDepth` | `number` | `1` | Graph traversal depth (hops) from matched nodes |
 | `limit` | `number` | `30` | Maximum triplets/results to return after graph expansion |
 | `similarityScore` | `number` | - | Minimum similarity threshold (0.0-1.0) to filter results |
+| `crossCheckBoost` | `boolean` | `true` | Enable cross-check boosting (see below) |
+| `crossCheckBoostFactor` | `number` | `1.25` | Score multiplier for cross-check matches |
 
 **Example:**
 
@@ -291,6 +293,29 @@ const results = await index.query("Tech companies in California", {
   pathDepth: 2,          // Traverse 2 hops
   limit: 50,             // Return up to 50 results
   similarityScore: 0.5,  // Only results with score >= 0.5
+  crossCheckBoost: true, // Enable provenance-based boosting
+});
+```
+
+### Cross-Check Boosting
+
+Cross-check boosting is an advanced retrieval feature that improves result quality by combining vector similarity with graph provenance:
+
+1. **Vector search** finds semantically similar entity nodes
+2. **Graph traversal** expands to find related facts/triplets
+3. **Cross-check**: If a graph fact originated from the same document as a vector-matched entity, its score is boosted
+
+This rewards results that are **both semantically relevant AND have explicit graph connections**, improving precision for complex queries.
+
+```typescript
+// Disable cross-check boosting for raw vector scores
+const results = await index.query("Apple CEO", {
+  crossCheckBoost: false,
+});
+
+// Increase boost factor for stronger provenance preference
+const results = await index.query("Apple CEO", {
+  crossCheckBoostFactor: 1.5,  // 50% boost instead of default 25%
 });
 ```
 
@@ -317,50 +342,40 @@ const results = await index.query("Tech companies in California", {
 | `limit` | `number` | `30` | Max results after expansion |
 | `similarityScore` | `number` | - | Minimum similarity threshold |
 | `includeText` | `boolean` | `true` | Include source text in results |
+| `crossCheckBoost` | `boolean` | `true` | Enable cross-check boosting |
+| `crossCheckBoostFactor` | `number` | `1.25` | Score multiplier for provenance matches |
 
-## Space Management
+## Multi-Tenancy
 
-Isolate data into logical spaces for multi-tenancy.
+Isolate data for different domains using separate graph names:
 
 ```typescript
-import { SpaceManager } from "hana-kgvector";
-
-const spaces = new SpaceManager(conn);
-
-// Create a space
-const space = await spaces.create({
-  id: "finance-contracts",
-  name: "Finance Contract Data",
-  description: "Legal contracts and obligations",
+// Tenant 1: Finance data
+const financeStore = new HanaPropertyGraphStore(conn, {
+  graphName: "finance_contracts",
+});
+const financeIndex = new PropertyGraphIndex({
+  propertyGraphStore: financeStore,
+  embedModel,
+  kgExtractors: [...],
 });
 
-// List spaces
-const allSpaces = await spaces.list();
+// Tenant 2: HR data (completely isolated)
+const hrStore = new HanaPropertyGraphStore(conn, {
+  graphName: "hr_data",
+});
+const hrIndex = new PropertyGraphIndex({
+  propertyGraphStore: hrStore,
+  embedModel,
+  kgExtractors: [...],
+});
 ```
+
+Each `graphName` creates:
+- A separate RDF named graph for knowledge graph data
+- A separate vector table for embeddings
 
 ## Low-Level Access
-
-### Direct Vector Operations
-
-```typescript
-import { HanaVectorStore } from "hana-kgvector";
-
-const vectorStore = new HanaVectorStore(conn, { tableName: "MY_CHUNKS" });
-await vectorStore.ensureTable({ vectorDimension: 1536 });
-
-await vectorStore.addChunk({
-  id: "chunk_1",
-  spaceId: "my-space",
-  content: "Document text...",
-  embedding: [0.1, 0.2, ...],
-});
-
-const results = await vectorStore.similaritySearch({
-  spaceId: "my-space",
-  queryEmbedding: [...],
-  topK: 10,
-});
-```
 
 ### Direct SPARQL Access
 

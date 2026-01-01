@@ -14,6 +14,10 @@ export interface VectorContextRetrieverOptions extends BasePGRetrieverOptions {
   pathDepth?: number;
   limit?: number;
   similarityScore?: number;
+  /** Enable cross-check boosting: boost scores when vector-matched entities link to graph facts (default: true) */
+  crossCheckBoost?: boolean;
+  /** Multiplier for cross-check boost (default: 1.25 = 25% boost) */
+  crossCheckBoostFactor?: number;
 }
 
 export class VectorContextRetriever extends BasePGRetriever {
@@ -22,6 +26,8 @@ export class VectorContextRetriever extends BasePGRetriever {
   private readonly pathDepth: number;
   private readonly limit: number;
   private readonly similarityScore?: number;
+  private readonly crossCheckBoost: boolean;
+  private readonly crossCheckBoostFactor: number;
 
   constructor(options: VectorContextRetrieverOptions) {
     super(options);
@@ -30,6 +36,8 @@ export class VectorContextRetriever extends BasePGRetriever {
     this.pathDepth = options.pathDepth ?? 1;
     this.limit = options.limit ?? 30;
     this.similarityScore = options.similarityScore;
+    this.crossCheckBoost = options.crossCheckBoost ?? true;
+    this.crossCheckBoostFactor = options.crossCheckBoostFactor ?? 1.25;
   }
 
   async retrieveFromGraph(queryBundle: QueryBundle): Promise<NodeWithScore[]> {
@@ -56,6 +64,26 @@ export class VectorContextRetriever extends BasePGRetriever {
 
     const kgIds = kgNodes.map((n) => n.id);
 
+    // Build provenance set from vector-matched nodes for cross-check boosting
+    // This includes document IDs, chunk IDs, and other source identifiers
+    const provenanceSet = new Set<string>();
+    if (this.crossCheckBoost) {
+      for (const node of kgNodes) {
+        // Add node ID itself (for CHUNK nodes)
+        provenanceSet.add(node.id.toLowerCase());
+        provenanceSet.add(node.name.toLowerCase());
+        
+        // Add documentId from properties if present
+        const props = node.properties ?? {};
+        if (props.documentId) {
+          provenanceSet.add(String(props.documentId).toLowerCase());
+        }
+        if (props.sourceChunk) {
+          provenanceSet.add(String(props.sourceChunk).toLowerCase());
+        }
+      }
+    }
+
     const triplets = await this.graphStore.getRelMap({
       nodes: kgNodes,
       depth: this.pathDepth,
@@ -69,7 +97,20 @@ export class VectorContextRetriever extends BasePGRetriever {
       const idx2 = kgIds.indexOf(triplet[2].id);
       const score1 = idx1 >= 0 ? scores[idx1] : 0;
       const score2 = idx2 >= 0 ? scores[idx2] : 0;
-      newScores.push(Math.max(score1, score2));
+      let baseScore = Math.max(score1, score2);
+
+      // Cross-check boosting: if triplet entities have provenance linking back to
+      // vector-matched nodes, boost the score. This rewards facts that are both
+      // semantically similar AND have explicit graph connections.
+      if (this.crossCheckBoost && baseScore > 0) {
+        const shouldBoost = this.checkProvenance(triplet[0], provenanceSet) ||
+                           this.checkProvenance(triplet[2], provenanceSet);
+        if (shouldBoost) {
+          baseScore = Math.min(1.0, baseScore * this.crossCheckBoostFactor);
+        }
+      }
+
+      newScores.push(baseScore);
     }
 
     let results = triplets.map((t, i) => ({ triplet: t, score: newScores[i] }));
@@ -84,5 +125,33 @@ export class VectorContextRetriever extends BasePGRetriever {
       results.map((r) => r.triplet),
       results.map((r) => r.score)
     );
+  }
+
+  /**
+   * Check if a node has provenance linking to the vector-matched nodes.
+   * Returns true if the node's properties contain a documentId or sourceChunk
+   * that matches something in the provenance set.
+   */
+  private checkProvenance(node: LabelledNode, provenanceSet: Set<string>): boolean {
+    if (provenanceSet.size === 0) return false;
+
+    const props = node.properties ?? {};
+    
+    // Check documentId property
+    if (props.documentId && provenanceSet.has(String(props.documentId).toLowerCase())) {
+      return true;
+    }
+    
+    // Check sourceChunk property
+    if (props.sourceChunk && provenanceSet.has(String(props.sourceChunk).toLowerCase())) {
+      return true;
+    }
+    
+    // Check if this node itself is in the provenance set (e.g., a CHUNK node)
+    if (provenanceSet.has(node.id.toLowerCase()) || provenanceSet.has(node.name.toLowerCase())) {
+      return true;
+    }
+
+    return false;
   }
 }
