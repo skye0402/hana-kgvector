@@ -5,5 +5,6 @@ export default defineConfig({
   format: ["esm"],
   dts: true,
   sourcemap: true,
-  clean: true
+  clean: true,
+  external: ["@sap/hana-client", "@sap/hana-client/extension/Stream"],
 });
