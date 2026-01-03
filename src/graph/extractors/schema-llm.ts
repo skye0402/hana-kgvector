@@ -16,7 +16,7 @@ export interface SchemaLLMPathExtractorOptions {
 }
 
 const DEFAULT_EXTRACT_PROMPT = `Given the following text, extract a knowledge graph according to the provided schema.
-Try to limit to {maxTriplets} extracted paths.
+Extract up to {maxTriplets} triplets. If fewer are present in the text, return fewer. Do not invent or pad triplets.
 
 Schema:
 - Entity types: {entityTypes}
@@ -196,6 +196,10 @@ export class SchemaLLMPathExtractor implements TransformComponent {
     try {
       const result = await this.llm.structuredPredict(this.rawTripletSchema, prompt);
       triplets = this.pruneInvalidTriplets(result);
+
+      if (this.maxTripletsPerChunk > 0 && triplets.length > this.maxTripletsPerChunk) {
+        triplets = triplets.slice(0, this.maxTripletsPerChunk);
+      }
     } catch (err) {
       // Log extraction errors for debugging
       console.warn(`[SchemaLLMPathExtractor] Failed to extract from node ${node.id}:`, err);
