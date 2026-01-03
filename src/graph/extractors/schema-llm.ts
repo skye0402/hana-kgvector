@@ -52,6 +52,7 @@ export class SchemaLLMPathExtractor implements TransformComponent {
   private readonly strict: boolean;
   private readonly extractPromptTemplate: string;
   private readonly tripletSchema: z.ZodType<any>;
+  private readonly rawTripletSchema: z.ZodType<any>;
 
   constructor(options: SchemaLLMPathExtractorOptions) {
     this.llm = options.llm;
@@ -83,6 +84,14 @@ export class SchemaLLMPathExtractor implements TransformComponent {
     this.tripletSchema = z.object({
       triplets: z.array(tripletSchema),
     });
+
+    this.rawTripletSchema = z.object({
+      triplets: z.array(z.any()),
+    });
+  }
+
+  private normalizeType(type: string): string {
+    return String(type).toUpperCase().replace(/\s+/g, "_");
   }
 
   private buildPrompt(text: string): string {
@@ -103,11 +112,15 @@ export class SchemaLLMPathExtractor implements TransformComponent {
       return true;
     }
 
+    const subj = this.normalizeType(subjectType);
+    const rel = this.normalizeType(relationType);
+    const obj = this.normalizeType(objectType);
+
     return this.schema.validationSchema.some(
       ([s, r, o]) =>
-        s.toUpperCase() === subjectType.toUpperCase() &&
-        r.toUpperCase() === relationType.toUpperCase() &&
-        o.toUpperCase() === objectType.toUpperCase()
+        this.normalizeType(s) === subj &&
+        this.normalizeType(r) === rel &&
+        this.normalizeType(o) === obj
     );
   }
 
@@ -116,10 +129,28 @@ export class SchemaLLMPathExtractor implements TransformComponent {
   ): Triplet[] {
     const validTriplets: Triplet[] = [];
 
+    const allowedEntityTypes = new Set(this.schema.entityTypes.map((t) => this.normalizeType(t)));
+    const allowedRelationTypes = new Set(this.schema.relationTypes.map((t) => this.normalizeType(t)));
+
     for (const triplet of extracted.triplets) {
-      const subjectType = String(triplet.subject.type).toUpperCase().replace(/\s+/g, "_");
-      const relationType = String(triplet.relation.type).toUpperCase().replace(/\s+/g, "_");
-      const objectType = String(triplet.object.type).toUpperCase().replace(/\s+/g, "_");
+      const subject = (triplet as any)?.subject;
+      const relation = (triplet as any)?.relation;
+      const object = (triplet as any)?.object;
+
+      if (!subject || !relation || !object) continue;
+      if (typeof subject.type !== "string" || typeof subject.name !== "string") continue;
+      if (typeof relation.type !== "string") continue;
+      if (typeof object.type !== "string" || typeof object.name !== "string") continue;
+
+      const subjectType = this.normalizeType(subject.type);
+      const relationType = this.normalizeType(relation.type);
+      const objectType = this.normalizeType(object.type);
+
+      if (this.strict) {
+        if (!allowedEntityTypes.has(subjectType)) continue;
+        if (!allowedRelationTypes.has(relationType)) continue;
+        if (!allowedEntityTypes.has(objectType)) continue;
+      }
 
       if (!this.isValidTriplet(subjectType, relationType, objectType)) {
         continue;
@@ -163,7 +194,7 @@ export class SchemaLLMPathExtractor implements TransformComponent {
     let triplets: Triplet[] = [];
 
     try {
-      const result = await this.llm.structuredPredict(this.tripletSchema, prompt);
+      const result = await this.llm.structuredPredict(this.rawTripletSchema, prompt);
       triplets = this.pruneInvalidTriplets(result);
     } catch (err) {
       // Log extraction errors for debugging
