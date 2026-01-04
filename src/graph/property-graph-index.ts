@@ -149,6 +149,10 @@ export class PropertyGraphIndex {
     crossCheckBoost?: boolean;
     /** Multiplier for cross-check boost (default: 1.25 = 25% boost) */
     crossCheckBoostFactor?: number;
+    /** Include structural adjacency relations (ON_SAME_PAGE, ADJACENT_TO) in graph expansion (default: true) */
+    includeStructuralEdges?: boolean;
+    /** Depth for structural edge traversal (default: 1) */
+    structuralDepth?: number;
   }): PGRetriever {
     let subRetrievers = options?.subRetrievers as any[];
 
@@ -164,6 +168,8 @@ export class PropertyGraphIndex {
           similarityScore: options?.similarityScore,
           crossCheckBoost: options?.crossCheckBoost,
           crossCheckBoostFactor: options?.crossCheckBoostFactor,
+          includeStructuralEdges: options?.includeStructuralEdges,
+          structuralDepth: options?.structuralDepth,
         }),
       ];
     }
@@ -188,6 +194,10 @@ export class PropertyGraphIndex {
     crossCheckBoost?: boolean;
     /** Multiplier for cross-check boost (default: 1.25 = 25% boost) */
     crossCheckBoostFactor?: number;
+    /** Include structural adjacency relations (ON_SAME_PAGE, ADJACENT_TO) in graph expansion (default: true) */
+    includeStructuralEdges?: boolean;
+    /** Depth for structural edge traversal (default: 1) */
+    structuralDepth?: number;
   }): Promise<NodeWithScore[]> {
     const retriever = this.asRetriever(options);
     return retriever.retrieve({ queryStr });

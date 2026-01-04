@@ -1,6 +1,6 @@
 import type { PropertyGraphStore, VectorStoreQuery } from "../property-graph-store";
 import type { QueryBundle, NodeWithScore, LabelledNode } from "../types";
-import { KG_SOURCE_REL } from "../types";
+import { KG_SOURCE_REL, TRIPLET_SOURCE_KEY, STRUCT_SAME_PAGE, STRUCT_ADJACENT, STRUCT_CONTAINS } from "../types";
 import { BasePGRetriever, type BasePGRetrieverOptions } from "./base";
 
 export interface EmbedModel {
@@ -18,6 +18,10 @@ export interface VectorContextRetrieverOptions extends BasePGRetrieverOptions {
   crossCheckBoost?: boolean;
   /** Multiplier for cross-check boost (default: 1.25 = 25% boost) */
   crossCheckBoostFactor?: number;
+  /** Include structural adjacency relations (ON_SAME_PAGE, ADJACENT_TO) in graph expansion (default: true) */
+  includeStructuralEdges?: boolean;
+  /** Depth for structural edge traversal (default: 1) */
+  structuralDepth?: number;
 }
 
 export class VectorContextRetriever extends BasePGRetriever {
@@ -28,6 +32,8 @@ export class VectorContextRetriever extends BasePGRetriever {
   private readonly similarityScore?: number;
   private readonly crossCheckBoost: boolean;
   private readonly crossCheckBoostFactor: number;
+  private readonly includeStructuralEdges: boolean;
+  private readonly structuralDepth: number;
 
   constructor(options: VectorContextRetrieverOptions) {
     super(options);
@@ -38,6 +44,8 @@ export class VectorContextRetriever extends BasePGRetriever {
     this.similarityScore = options.similarityScore;
     this.crossCheckBoost = options.crossCheckBoost ?? true;
     this.crossCheckBoostFactor = options.crossCheckBoostFactor ?? 1.25;
+    this.includeStructuralEdges = options.includeStructuralEdges ?? true;
+    this.structuralDepth = options.structuralDepth ?? 1;
   }
 
   async retrieveFromGraph(queryBundle: QueryBundle): Promise<NodeWithScore[]> {
@@ -84,12 +92,56 @@ export class VectorContextRetriever extends BasePGRetriever {
       }
     }
 
-    const triplets = await this.graphStore.getRelMap({
+    let triplets = await this.graphStore.getRelMap({
       nodes: kgNodes,
       depth: this.pathDepth,
       limit: this.limit,
       ignoreRels: [KG_SOURCE_REL],
     });
+
+    // Structural expansion: traverse ON_SAME_PAGE, ADJACENT_TO edges from source chunks
+    if (this.includeStructuralEdges) {
+      // Get CHUNK node IDs linked to matched entities via TRIPLET_SOURCE_KEY
+      const chunkIds = new Set<string>();
+      for (const node of kgNodes) {
+        const sourceId = node.properties?.[TRIPLET_SOURCE_KEY];
+        if (sourceId) {
+          chunkIds.add(`CHUNK_${String(sourceId).replace(/\s+/g, "_").toUpperCase()}`);
+        }
+        // Also include CHUNK nodes that were directly matched
+        if (node.label === "CHUNK") {
+          chunkIds.add(node.id);
+        }
+      }
+
+      if (chunkIds.size > 0) {
+        const chunkNodes = await this.graphStore.get({ ids: Array.from(chunkIds) });
+        if (chunkNodes.length > 0) {
+          const structuralTriplets = await this.graphStore.getRelMap({
+            nodes: chunkNodes,
+            depth: this.structuralDepth,
+            limit: this.limit,
+            ignoreRels: [KG_SOURCE_REL],
+          });
+
+          // Filter to only structural relations
+          const structuralRels = [STRUCT_SAME_PAGE, STRUCT_ADJACENT, STRUCT_CONTAINS];
+          const structuralOnly = structuralTriplets.filter(([_s, r, _o]) =>
+            structuralRels.includes(r.label)
+          );
+
+          // Add structural triplets to results (avoid duplicates)
+          const existingKeys = new Set(triplets.map(([s, r, o]) => `${s.id}|${r.label}|${o.id}`));
+          for (const triplet of structuralOnly) {
+            const key = `${triplet[0].id}|${triplet[1].label}|${triplet[2].id}`;
+            if (!existingKeys.has(key)) {
+              triplets.push(triplet);
+              existingKeys.add(key);
+            }
+          }
+        }
+      }
+    }
 
     const newScores: number[] = [];
     for (const triplet of triplets) {

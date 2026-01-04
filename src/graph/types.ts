@@ -6,6 +6,11 @@ export const KG_RELATIONS_KEY = "kg_relations";
 export const VECTOR_SOURCE_KEY = "vector_source_id";
 export const KG_SOURCE_REL = "HAS_SOURCE";
 
+// Structural adjacency relations (not semantic)
+export const STRUCT_SAME_PAGE = "ON_SAME_PAGE";
+export const STRUCT_ADJACENT = "ADJACENT_TO";
+export const STRUCT_CONTAINS = "CONTAINS";
+
 export const EntityNodeSchema = z.object({
   id: z.string(),
   label: z.string(),

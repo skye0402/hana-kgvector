@@ -4,3 +4,6 @@ export { SchemaLLMPathExtractor } from "./schema-llm";
 export type { SchemaLLMPathExtractorOptions, LLMClient } from "./schema-llm";
 
 export { ImplicitPathExtractor } from "./implicit";
+
+export { AdjacencyLinker } from "./adjacency-linker";
+export type { AdjacencyLinkerOptions } from "./adjacency-linker";
