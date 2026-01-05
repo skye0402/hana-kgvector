@@ -285,12 +285,14 @@ import { createHanaConnection, listGraphs, getGraphTables } from "hana-kgvector"
 
 const conn = await createHanaConnection({
   host: process.env.HANA_HOST!,
+  port: parseInt(process.env.HANA_PORT || "443"),
   user: process.env.HANA_USER!,
   password: process.env.HANA_PASSWORD!,
 });
 
 const graphs = await listGraphs(conn, {
   // schema: "MY_SCHEMA",            // optional (defaults to CURRENT_SCHEMA)
+  // includeCounts: true,             // optional (row counts; can be expensive)
   require: ["VECTORS", "NODES"],    // optional filter
 });
 

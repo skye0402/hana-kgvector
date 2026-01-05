@@ -3,18 +3,23 @@ import { hanaExec } from "./connection";
 
 export type HanaKgGraphTableSuffix = "VECTORS" | "NODES" | "IMAGES";
 
+export type GraphTables = {
+  vectorsTable: string;
+  nodesTable: string;
+  imagesTable: string;
+};
+
 export type HanaKgGraphInfo = {
   graphName: string;
   hasVectors: boolean;
   hasNodes: boolean;
   hasImages: boolean;
+  vectorsCount?: number;
+  nodesCount?: number;
+  imagesCount?: number;
 };
 
-export function getGraphTables(graphName: string): {
-  vectorsTable: string;
-  nodesTable: string;
-  imagesTable: string;
-} {
+export function getGraphTables(graphName: string): GraphTables {
   return {
     vectorsTable: `${graphName}_VECTORS`,
     nodesTable: `${graphName}_NODES`,
@@ -35,6 +40,7 @@ export async function listGraphs(
   opts?: {
     schema?: string;
     require?: HanaKgGraphTableSuffix[];
+    includeCounts?: boolean;
     limit?: number;
   }
 ): Promise<HanaKgGraphInfo[]> {
@@ -74,6 +80,36 @@ export async function listGraphs(
       hasNodes: tableNames.has(nodesTable),
       hasImages: tableNames.has(imagesTable),
     });
+  }
+
+  if (opts?.includeCounts) {
+    // Only count tables that exist; use quoted identifiers to be robust.
+    // NOTE: Table names come from SYS.TABLES results, so this is not user input.
+    const schemaName = opts?.schema ? String(opts.schema).toUpperCase() : undefined;
+
+    const countTable = async (tableName: string): Promise<number> => {
+      const fq = schemaName
+        ? `"${schemaName.replace(/"/g, '""')}"."${tableName.replace(/"/g, '""')}"`
+        : `"${tableName.replace(/"/g, '""')}"`;
+      const res = (await hanaExec<any[]>(conn, `SELECT COUNT(*) AS CNT FROM ${fq}`)) as any[];
+      const row = res?.[0];
+      const cnt = row?.CNT ?? row?.cnt ?? Object.values(row ?? {})[0];
+      return Number(cnt ?? 0);
+    };
+
+    for (const info of infos) {
+      const { vectorsTable, nodesTable, imagesTable } = getGraphTables(info.graphName);
+
+      if (info.hasVectors) {
+        info.vectorsCount = await countTable(vectorsTable);
+      }
+      if (info.hasNodes) {
+        info.nodesCount = await countTable(nodesTable);
+      }
+      if (info.hasImages) {
+        info.imagesCount = await countTable(imagesTable);
+      }
+    }
   }
 
   const requireList = (opts?.require ?? []).map(normalizeRequirement);
