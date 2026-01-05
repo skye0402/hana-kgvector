@@ -48,7 +48,7 @@ export abstract class BasePGRetriever {
   }
 
   protected async addSourceText(nodes: NodeWithScore[]): Promise<NodeWithScore[]> {
-    if (!this.graphStore.getLlamaNodes) {
+    if (!this.graphStore.getDocumentNodes) {
       return nodes;
     }
 
@@ -58,7 +58,7 @@ export abstract class BasePGRetriever {
 
     if (refDocIds.length === 0) return nodes;
 
-    const ogNodes = await this.graphStore.getLlamaNodes(refDocIds);
+    const ogNodes = await this.graphStore.getDocumentNodes(refDocIds);
     const nodeMap = new Map(ogNodes.map((n) => [n.id, n]));
 
     const graphNodeMap = new Map<string, string[]>();

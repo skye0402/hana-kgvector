@@ -75,7 +75,7 @@ async function main() {
   const graphStore = new HanaPropertyGraphStore(conn, {
     graphName: "urn:hkv:smoke_test",
     vectorTableName: "URN_HKV_SMOKE_TEST_VECTORS",
-    llamaNodesTableName: "URN_HKV_SMOKE_TEST_NODES",
+    documentNodesTableName: "URN_HKV_SMOKE_TEST_NODES",
     resetTables: true,
   });
 

@@ -27,6 +27,6 @@ export interface PropertyGraphStore {
 
   getSchema?(opts?: { refresh?: boolean }): Promise<Record<string, unknown>>;
 
-  upsertLlamaNodes?(nodes: Array<{ id: string; text: string; metadata: Record<string, unknown>; embedding?: number[] }>): Promise<void>;
-  getLlamaNodes?(ids: string[]): Promise<Array<{ id: string; text: string; metadata: Record<string, unknown>; hash?: string }>>;
+  upsertDocumentNodes?(nodes: Array<{ id: string; text: string; metadata: Record<string, unknown>; embedding?: number[] }>): Promise<void>;
+  getDocumentNodes?(ids: string[]): Promise<Array<{ id: string; text: string; metadata: Record<string, unknown>; hash?: string }>>;
 }

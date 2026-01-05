@@ -273,7 +273,7 @@ Retrieve relevant context from the graph.
 |-----------|------|---------|-------------|
 | `graphName` | `string` | Required | RDF named graph identifier (e.g., `"my_knowledge_graph"`) |
 | `vectorTableName` | `string` | Auto-generated | Custom table name for vector storage |
-| `llamaNodesTableName` | `string` | Auto-generated | Custom table name for document nodes |
+| `documentNodesTableName` | `string` | Auto-generated | Custom table name for document nodes |
 | `resetTables` | `boolean` | `false` | Drop and recreate tables on init (dev/test only) |
 
 ### PropertyGraphIndex Options

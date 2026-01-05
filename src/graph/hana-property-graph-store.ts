@@ -3,7 +3,7 @@ import type { PropertyGraphStore, VectorStoreQuery } from "./property-graph-stor
 import type { EntityNode, Relation, Triplet, LabelledNode } from "./types";
 import { TRIPLET_SOURCE_KEY, KG_SOURCE_REL } from "./types";
 
-type LlamaNode = {
+type DocumentNode = {
   id: string;
   text: string;
   metadata: Record<string, unknown>;
@@ -14,7 +14,7 @@ type LlamaNode = {
 export interface HanaPropertyGraphStoreOptions {
   graphName: string;
   vectorTableName?: string;
-  llamaNodesTableName?: string;
+  documentNodesTableName?: string;
   /** Optional, unused for dimensionless REAL_VECTOR columns (kept for backward compat logging). */
   vectorDimension?: number;
   /** If true, will DROP and recreate tables on init (intended for tests/dev only). */
@@ -25,7 +25,7 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
   private readonly conn: HanaConnection;
   private readonly graphName: string;
   private readonly vectorTableName: string;
-  private readonly llamaNodesTableName: string;
+  private readonly documentNodesTableName: string;
   private readonly resetTables: boolean;
   private initialized = false;
 
@@ -36,7 +36,7 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
     this.conn = conn;
     this.graphName = options.graphName;
     this.vectorTableName = options.vectorTableName ?? `${options.graphName.replace(/[^a-zA-Z0-9]/g, "_")}_VECTORS`;
-    this.llamaNodesTableName = options.llamaNodesTableName ?? `${options.graphName.replace(/[^a-zA-Z0-9]/g, "_")}_NODES`;
+    this.documentNodesTableName = options.documentNodesTableName ?? `${options.graphName.replace(/[^a-zA-Z0-9]/g, "_")}_NODES`;
     this.resetTables = options.resetTables ?? false;
   }
 
@@ -46,7 +46,7 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
     // Optional destructive reset intended for tests/dev. This is OFF by default.
     if (this.resetTables) {
       await this.exec(`DROP TABLE ${this.vectorTableName}`).catch(() => {});
-      await this.exec(`DROP TABLE ${this.llamaNodesTableName}`).catch(() => {});
+      await this.exec(`DROP TABLE ${this.documentNodesTableName}`).catch(() => {});
 
       // Also clear the RDF named graph to avoid accumulating triples across test runs.
       // (Tables are recreated, but the KG graph would otherwise persist.)
@@ -73,8 +73,8 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
       }
     });
 
-    const createLlamaTable = `
-      CREATE COLUMN TABLE ${this.llamaNodesTableName} (
+    const createDocumentTable = `
+      CREATE COLUMN TABLE ${this.documentNodesTableName} (
         id NVARCHAR(512) PRIMARY KEY,
         text NCLOB,
         metadata NCLOB,
@@ -82,7 +82,7 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
         embedding REAL_VECTOR
       )
     `;
-    await this.exec(createLlamaTable).catch((err: any) => {
+    await this.exec(createDocumentTable).catch((err: any) => {
       const message = String(err?.message ?? "");
       if (!/exists|duplicate table name/i.test(message)) {
         throw err;
@@ -380,7 +380,7 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
     return [nodes, scores];
   }
 
-  async upsertLlamaNodes(nodes: LlamaNode[]): Promise<void> {
+  async upsertDocumentNodes(nodes: DocumentNode[]): Promise<void> {
     await this.ensureInitialized();
     for (const node of nodes) {
       // Remove circular references from metadata before serialization
@@ -390,7 +390,7 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
       delete (safeMetadata as any).kg_relations;
 
       const sql = `
-        UPSERT ${this.llamaNodesTableName} (id, text, metadata, hash, embedding)
+        UPSERT ${this.documentNodesTableName} (id, text, metadata, hash, embedding)
         VALUES (?, ?, ?, ?, ${node.embedding ? "TO_REAL_VECTOR(?)" : "NULL"})
         WITH PRIMARY KEY
       `;
@@ -407,12 +407,12 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
     }
   }
 
-  async getLlamaNodes(ids: string[]): Promise<LlamaNode[]> {
+  async getDocumentNodes(ids: string[]): Promise<DocumentNode[]> {
     await this.ensureInitialized();
     if (ids.length === 0) return [];
 
     const rows = (await this.exec(
-      `SELECT id, text, metadata, hash FROM ${this.llamaNodesTableName} WHERE id IN (${ids.map(() => "?").join(",")})`,
+      `SELECT id, text, metadata, hash FROM ${this.documentNodesTableName} WHERE id IN (${ids.map(() => "?").join(",")})`,
       ids
     )) as any[];
 

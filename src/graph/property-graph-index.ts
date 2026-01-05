@@ -81,11 +81,11 @@ export class PropertyGraphIndex {
     const existingKgNodeIds = new Set(existingKgNodes.map((n) => n.id));
     const newKgNodes = kgNodesToInsert.filter((n) => !existingKgNodeIds.has(n.id));
 
-    if (this.propertyGraphStore.getLlamaNodes) {
-      const existingLlamaNodes = await this.propertyGraphStore.getLlamaNodes(
+    if (this.propertyGraphStore.getDocumentNodes) {
+      const existingDocumentNodes = await this.propertyGraphStore.getDocumentNodes(
         processedNodes.map((n) => n.id)
       );
-      const existingHashes = new Set(existingLlamaNodes.map((n) => n.hash));
+      const existingHashes = new Set(existingDocumentNodes.map((n) => n.hash));
       processedNodes = processedNodes.filter((n) => {
         const hash = this.computeHash(n.text);
         n.hash = hash;
@@ -107,8 +107,8 @@ export class PropertyGraphIndex {
       }
     }
 
-    if (this.propertyGraphStore.upsertLlamaNodes && processedNodes.length > 0) {
-      await this.propertyGraphStore.upsertLlamaNodes(
+    if (this.propertyGraphStore.upsertDocumentNodes && processedNodes.length > 0) {
+      await this.propertyGraphStore.upsertDocumentNodes(
         processedNodes.map((n) => ({
           id: n.id,
           text: n.text,

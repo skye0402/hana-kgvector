@@ -229,7 +229,7 @@ async function main() {
   const graphStore = new HanaPropertyGraphStore(conn, {
     graphName: "urn:hkv:quality_test",
     vectorTableName: "URN_HKV_QUALITY_TEST_VECTORS",
-    llamaNodesTableName: "URN_HKV_QUALITY_TEST_NODES",
+    documentNodesTableName: "URN_HKV_QUALITY_TEST_NODES",
     resetTables: true,
   });
 
