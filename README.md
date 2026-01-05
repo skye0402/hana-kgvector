@@ -2,16 +2,31 @@
 
 A TypeScript framework for building **hybrid GraphRAG** applications using SAP HANA Cloud as the unified backend for knowledge graphs (RDF) and vector embeddings.
 
+![hana-kgvector](doc-assets/hana-kg-vector-title.png)
+**In a Nutshell:** Think of `hana-kgvector` as a super-smart librarian cat. It uses SAP HANA as a giant brain that stores data in two ways: a messy pile of "fuzzy ideas" (Vectors) and a neat corkboard of "connected facts" (Knowledge Graph). When you ask a question, it checks both the fuzzy pile and the neat board to sew together the perfect answer.
+
 ## Features
 
-- **Unified Storage**: SAP HANA Cloud for both RDF triples (Knowledge Graph Engine) and vector embeddings (Vector Engine)
-- **PropertyGraphIndex**: LlamaIndex-inspired API for building and querying property graphs
-- **Hybrid Retrieval**: Combine vector similarity search with graph traversal
-- **Schema-Guided Extraction**: Extract entities and relations from documents using LLMs
-- **Multi-Tenancy**: Isolate data into logical "Spaces" for different domains
-- **LLM Agnostic**: Works with any LLM via LiteLLM proxy (OpenAI, Anthropic, Azure, etc.)
+*   **Unified Storage**: SAP HANA Cloud for both RDF triples (Knowledge Graph Engine) and vector embeddings (Vector Engine)
+    
+*   **Hybrid Retrieval**: Combine vector similarity search (for vague semantic matches) with graph traversal (for precise factual connections)
+    
+*   **Multimodal RAG Support**: Index mixed-media documents. Retrieve images or diagrams based on the semantic relevance of their surrounding text by linking them structurally in the graph.
+    
+*   **PropertyGraphIndex**: LlamaIndex-inspired API for building and querying property graphs
+    
+*   **Schema-Guided Extraction**: Extract entities and relations from documents using LLMs based on strict rules
+    
+*   **Multi-Tenancy**: Isolate data using separate graph names for different domains
+    
+*   **LLM Agnostic**: Works with any LLM via LiteLLM proxy (OpenAI, Anthropic, Azure, etc.)
 
 > 📚 **New to hana-kgvector?** Check out the [Step-by-Step Tutorial](./TUTORIAL.md) for a complete guide.
+
+> 🚀 **Ready for real-world examples?** See the [hana-kgvector-examples](https://github.com/skye0402/hana-kgvector-examples) repository for:
+> - **Multi-Document Chat** - Full-featured Q&A with image processing and cross-document queries
+> - **Graph Visualizer** - Interactive web UI to explore your knowledge graph
+> - **PDF Chat** - Simple single-document example to get started
 
 ## Installation
 
@@ -239,6 +254,7 @@ Transform text nodes into entities and relations.
 |-----------|-------------|
 | `SchemaLLMPathExtractor` | Schema-guided extraction with LLM |
 | `ImplicitPathExtractor` | Extract structure-based relations (CHUNK → DOCUMENT) |
+| `AdjacencyLinker` | Create structural edges between adjacent chunks (same page, sequential) |
 
 ### Retrievers
 
@@ -282,6 +298,8 @@ These options can be passed to `index.query()` or `index.asRetriever()`:
 | `similarityScore` | `number` | - | Minimum similarity threshold (0.0-1.0) to filter results |
 | `crossCheckBoost` | `boolean` | `true` | Enable cross-check boosting (see below) |
 | `crossCheckBoostFactor` | `number` | `1.25` | Score multiplier for cross-check matches |
+| `includeStructuralEdges` | `boolean` | `true` | Traverse structural adjacency edges (ON_SAME_PAGE, ADJACENT_TO) |
+| `structuralDepth` | `number` | `1` | Depth for structural edge traversal |
 
 **Example:**
 
@@ -343,6 +361,39 @@ const results = await index.query("Apple CEO", {
 | `includeText` | `boolean` | `true` | Include source text in results |
 | `crossCheckBoost` | `boolean` | `true` | Enable cross-check boosting |
 | `crossCheckBoostFactor` | `number` | `1.25` | Score multiplier for provenance matches |
+| `includeStructuralEdges` | `boolean` | `true` | Traverse structural adjacency edges |
+| `structuralDepth` | `number` | `1` | Depth for structural edge traversal |
+
+## Structural Adjacency (Multimodal Support)
+
+For documents with mixed content (text, images, tables), use `AdjacencyLinker` to create structural edges between chunks:
+
+```typescript
+import { AdjacencyLinker } from "hana-kgvector";
+
+const index = new PropertyGraphIndex({
+  propertyGraphStore: graphStore,
+  embedModel,
+  kgExtractors: [
+    new SchemaLLMPathExtractor({ llm: llmClient, schema }),
+    new ImplicitPathExtractor(),
+    new AdjacencyLinker({       // Must come AFTER ImplicitPathExtractor
+      linkSamePage: true,       // Link chunks on same page
+      linkAdjacent: true,       // Link sequential chunks
+      adjacentDistance: 1,      // How many chunks ahead to link
+      crossTypeOnly: false,     // Set true to only link text↔image
+    }),
+  ],
+});
+```
+
+This enables image/table chunks to be retrieved when nearby text matches a query, via graph traversal of `ON_SAME_PAGE` and `ADJACENT_TO` edges.
+
+**Required metadata** for adjacency linking:
+- `documentId` — groups chunks by document
+- `pageNumber` — for same-page linking  
+- `chunkIndex` — for adjacent-chunk linking
+- `contentType` — (optional) for `crossTypeOnly` mode
 
 ## Multi-Tenancy
 
@@ -425,19 +476,6 @@ pnpm run smoke:pg
 # Run quality test suite (comprehensive testing)
 pnpm exec tsx scripts/test-quality.ts
 ```
-
-## Quality Test Results
-
-The quality test suite validates entity extraction, vector retrieval, and graph traversal:
-
-| Test | Score |
-|------|-------|
-| Entity Extraction (Organizations, People, Locations) | 100% |
-| Relation Extraction | 100% |
-| Vector Retrieval Relevance | 100% |
-| Graph Traversal | 100% |
-| Data Persistence (Vectors + RDF Triples) | 100% |
-| **Overall** | **97.3%** |
 
 ## License
 

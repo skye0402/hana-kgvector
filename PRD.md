@@ -1,5 +1,11 @@
 # hana-kgvector: Product Requirements Document
 
+> **Note**: This PRD represents the original design vision. The actual implementation is simpler:
+> - **No SpaceManager class** — Multi-tenancy is achieved via `graphName` parameter in `HanaPropertyGraphStore`
+> - **No `hkv.spaces.create()` API** — Use `new HanaPropertyGraphStore(conn, { graphName: "..." })` directly
+> - **Structural adjacency** — Added via `AdjacencyLinker` extractor (not in original PRD)
+> - See [README.md](./README.md) for the actual API reference.
+
 ## Executive Summary
 
 **hana-kgvector** is a TypeScript framework for building hybrid GraphRAG (Graph Retrieval-Augmented Generation) applications using SAP HANA Cloud as the unified backend for both knowledge graphs (RDF triple store) and vector embeddings. The framework enables:
@@ -67,28 +73,27 @@ These domains are **disjunct** and should not cross-contaminate during retrieval
 │                              hana-kgvector                                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                  │
-│  │   Ingestion  │    │   Retrieval  │    │    Space     │                  │
-│  │    Engine    │    │    Engine    │    │   Manager    │                  │
-│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘                  │
-│         │                   │                   │                          │
-│         ▼                   ▼                   ▼                          │
-│  ┌─────────────────────────────────────────────────────────────────┐       │
-│  │                    LlamaIndex.TS Core                           │       │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │       │
-│  │  │  Document   │  │  Property   │  │   Hybrid Retriever      │  │       │
-│  │  │   Loaders   │  │ Graph Index │  │ (Vector + Graph + Text) │  │       │
-│  │  └─────────────┘  └─────────────┘  └─────────────────────────┘  │       │
-│  └─────────────────────────────────────────────────────────────────┘       │
-│                                │                                           │
-│         ┌──────────────────────┼──────────────────────┐                    │
-│         ▼                      ▼                      ▼                    │
-│  ┌─────────────┐       ┌─────────────┐       ┌─────────────┐              │
-│  │   LiteLLM   │       │ HANA Vector │       │  HANA KG    │              │
-│  │    Proxy    │       │   Engine    │       │   Engine    │              │
-│  └──────┬──────┘       └──────┬──────┘       └──────┬──────┘              │
-│         │                     │                     │                      │
-└─────────┼─────────────────────┼─────────────────────┼──────────────────────┘
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                   │
+│  │   Ingestion  │    │   Retrieval  │    │    Space     │                   │
+│  │    Engine    │    │    Engine    │    │   Manager    │                   │
+│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘                   │
+│         │                   │                   │                           │
+│         ▼                   ▼                   ▼                           │
+│  ┌─────────────────────────────────────────────────────────────────┐        │
+│  │                    LlamaIndex.TS Core                           │        │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │        │
+│  │  │  Document   │  │  Property   │  │   Hybrid Retriever      │  │        │
+│  │  │   Loaders   │  │ Graph Index │  │ (Vector + Graph + Text) │  │        │
+│  └─────────────────────────────────────────────────────────────────┘        │
+│                                │                                            │
+│         ┌──────────────────────┼──────────────────────┐                     │
+│         ▼                      ▼                      ▼                     │
+│  ┌─────────────┐       ┌─────────────┐       ┌─────────────┐                │
+│  │   LiteLLM   │       │ HANA Vector │       │  HANA KG    │                │
+│  │    Proxy    │       │   Engine    │       │   Engine    │                │
+│  └──────┬──────┘       └──────┬──────┘       └──────┬──────┘                │
+│         │                     │                     │                       │
+└─────────┼─────────────────────┼─────────────────────┼───────────────────────┘
           │                     │                     │
           ▼                     └──────────┬──────────┘
    ┌─────────────┐                         ▼
@@ -523,29 +528,29 @@ await hkv.spaces.delete("medical-skin", { confirm: true });
 The ingestion pipeline follows a specific order to ensure **provenance linking** between vector chunks and graph nodes:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        INGESTION PIPELINE                               │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌─────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐  │
-│  │  LOAD   │───▶│   CHUNK     │───▶│  VECTORIZE  │───▶│  EXTRACT    │  │
-│  │  (PDF)  │    │  (Semantic) │    │  (Embed)    │    │  (Triples)  │  │
-│  └─────────┘    └─────────────┘    └──────┬──────┘    └──────┬──────┘  │
-│                                           │                  │         │
-│                                           ▼                  ▼         │
-│                                    ┌─────────────┐    ┌─────────────┐  │
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        INGESTION PIPELINE                                │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │ 
+│  ┌─────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐ │
+│  │  LOAD   │───▶│   CHUNK     │───▶│  VECTORIZE  │───▶│  EXTRACT    │ │
+│  │  (PDF)  │     │  (Semantic) │     │  (Embed)    │     │  (Triples)  │ │
+│  └─────────┘     └─────────────┘     └──────┬──────┘     └──────┬──────┘ │
+│                                           │                   │          │
+│                                           ▼                   ▼          │
+│                                    ┌─────────────┐      ┌─────────────┐  │
 │                                    │   Vector    │◀──▶│    RDF      │  │
-│                                    │   Table     │    │   Store     │  │
-│                                    │  (ChunkID)  │    │  (Triples)  │  │
-│                                    └─────────────┘    └─────────────┘  │
-│                                           │                  │         │
-│                                           └────────┬─────────┘         │
-│                                                    ▼                   │
-│                                           ┌─────────────────┐          │
-│                                           │  PROVENANCE     │          │
-│                                           │  hkv:sourceChunk│          │
-│                                           └─────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────┘
+│                                    │   Table     │      │   Store     │  │
+│                                    │  (ChunkID)  │      │  (Triples)  │  │
+│                                    └─────────────┘      └─────────────┘  │
+│                                           │                  │           │
+│                                           └────────┬─────────┘           │
+│                                                    ▼                     │
+│                                           ┌─────────────────┐            │
+│                                           │  PROVENANCE     │            │
+│                                           │  hkv:sourceChunk│            │
+│                                           └─────────────────┘            │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Pipeline Steps:**

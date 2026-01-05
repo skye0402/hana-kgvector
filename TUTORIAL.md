@@ -303,6 +303,8 @@ console.log(`Found ${results.length} results`);
 | `similarityScore` | - | Minimum similarity threshold (0.0-1.0). Results below this are filtered out |
 | `crossCheckBoost` | true | Enable cross-check boosting for better relevance |
 | `crossCheckBoostFactor` | 1.25 | Score multiplier when provenance matches (25% boost) |
+| `includeStructuralEdges` | true | Traverse structural adjacency edges (ON_SAME_PAGE, ADJACENT_TO) |
+| `structuralDepth` | 1 | Depth for structural edge traversal |
 
 ### Cross-Check Boosting
 
@@ -404,6 +406,31 @@ const hrIndex = new PropertyGraphIndex({
 ```
 
 Each `graphName` creates a separate RDF named graph and vector table.
+
+### Structural Adjacency for Multimodal Content
+
+For documents with images, tables, or other non-text content, use `AdjacencyLinker` to create structural edges:
+
+```typescript
+import { AdjacencyLinker } from "hana-kgvector";
+
+const index = new PropertyGraphIndex({
+  propertyGraphStore: graphStore,
+  embedModel,
+  kgExtractors: [
+    new SchemaLLMPathExtractor({ llm: llmClient, schema }),
+    new ImplicitPathExtractor(),
+    new AdjacencyLinker({       // Must come AFTER ImplicitPathExtractor
+      linkSamePage: true,       // Link chunks on same page
+      linkAdjacent: true,       // Link sequential chunks  
+      adjacentDistance: 1,
+      crossTypeOnly: false,     // Set true to only link text↔image
+    }),
+  ],
+});
+```
+
+This enables image chunks to be retrieved when nearby text matches a query.
 
 ### Resetting Data (Development Only)
 
