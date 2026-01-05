@@ -407,6 +407,21 @@ const hrIndex = new PropertyGraphIndex({
 
 Each `graphName` creates a separate RDF named graph and vector table.
 
+### Discover Existing Graphs
+
+If you are working in a shared HANA schema (e.g. multiple examples or apps), you can list existing graphs created with hana-kgvector's table naming conventions:
+
+```typescript
+import { listGraphs } from "hana-kgvector";
+
+const graphs = await listGraphs(conn, {
+  // schema: "MY_SCHEMA",         // optional (defaults to CURRENT_SCHEMA)
+  require: ["VECTORS", "NODES"], // optional filter
+});
+
+console.log(graphs.map((g) => g.graphName));
+```
+
 ### Structural Adjacency for Multimodal Content
 
 For documents with images, tables, or other non-text content, use `AdjacencyLinker` to create structural edges:

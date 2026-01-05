@@ -276,6 +276,30 @@ Retrieve relevant context from the graph.
 | `documentNodesTableName` | `string` | Auto-generated | Custom table name for document nodes |
 | `resetTables` | `boolean` | `false` | Drop and recreate tables on init (dev/test only) |
 
+### Graph Discovery
+
+If you're using a shared HANA schema (e.g. for demos or multiple apps), you can discover existing graphs created with hana-kgvector's table naming conventions:
+
+```typescript
+import { createHanaConnection, listGraphs, getGraphTables } from "hana-kgvector";
+
+const conn = await createHanaConnection({
+  host: process.env.HANA_HOST!,
+  user: process.env.HANA_USER!,
+  password: process.env.HANA_PASSWORD!,
+});
+
+const graphs = await listGraphs(conn, {
+  // schema: "MY_SCHEMA",            // optional (defaults to CURRENT_SCHEMA)
+  require: ["VECTORS", "NODES"],    // optional filter
+});
+
+for (const g of graphs) {
+  console.log(g.graphName, g.hasVectors, g.hasNodes, g.hasImages);
+  console.log(getGraphTables(g.graphName));
+}
+```
+
 ### PropertyGraphIndex Options
 
 | Parameter | Type | Default | Description |
