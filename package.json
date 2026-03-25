@@ -39,17 +39,17 @@
     "smoke:pg": "tsx scripts/smoke-property-graph.ts"
   },
   "dependencies": {
-    "openai": "^4.0.0",
-    "zod": "^3.23.8"
+    "openai": "^4.104.0",
+    "zod": "^3.25.76"
   },
   "optionalDependencies": {
-    "@sap/hana-client": "^2.27.19"
+    "@sap/hana-client": "^2.28.17"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "tsup": "^8.0.0",
-    "tsx": "^4.0.0",
-    "typescript": "^5.0.0",
-    "dotenv": "^16.4.5"
+    "@types/node": "^22.19.15",
+    "dotenv": "^16.6.1",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
   }
 }

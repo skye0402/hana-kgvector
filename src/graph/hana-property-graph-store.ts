@@ -161,7 +161,10 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
 
     for (const [key, value] of Object.entries(node.properties)) {
       if (value !== undefined && value !== null) {
-        const escaped = typeof value === "string" ? this.escapeLiteral(value) : String(value);
+        const strVal = typeof value === "string" ? value : String(value);
+        // Skip overly large properties in RDF — they are already stored in the vectors table
+        if (strVal.length > 5000) continue;
+        const escaped = this.escapeLiteral(strVal);
         lines.push(`${uri} <urn:hkv:prop:${key}> "${escaped}" .`);
       }
     }
@@ -170,7 +173,12 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
   }
 
   private escapeLiteral(s: string): string {
-    return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+    return s
+      .replace(/\\/g, "\\\\")
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, "\\n")
+      .replace(/\r/g, "\\r")
+      .replace(/\t/g, "\\t");
   }
 
   async upsertNodes(nodes: EntityNode[]): Promise<void> {
