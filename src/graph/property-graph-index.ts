@@ -6,9 +6,10 @@ import { PGRetriever } from "./pg-retriever";
 import { VectorContextRetriever, type EmbedModel } from "./retrievers/vector-context";
 import { ImplicitPathExtractor } from "./extractors/implicit";
 import { createHash } from "crypto";
+import { get_encoding } from "tiktoken";
 
-/** Safe default: ~7 000 tokens for text-embedding-3-small (8 192 token limit). */
-const DEFAULT_MAX_EMBED_CHARS = 28_000;
+/** Default token limit with safety buffer for text-embedding-3-small (8 192 token context). */
+const DEFAULT_MAX_EMBED_TOKENS = 8_000;
 
 export interface PropertyGraphIndexOptions {
   propertyGraphStore: PropertyGraphStore;
@@ -16,10 +17,10 @@ export interface PropertyGraphIndexOptions {
   embedModel?: EmbedModel;
   embedKgNodes?: boolean;
   showProgress?: boolean;
-  /** Maximum characters to send to the embedding model per text.
-   *  Texts longer than this are truncated before embedding.
-   *  Default: 28 000 (~7 000 tokens, safe for 8 192-token models). */
-  maxEmbedChars?: number;
+  /** Maximum tokens to send to the embedding model per text.
+   *  Texts exceeding this limit are truncated using tiktoken (cl100k_base encoding).
+   *  Default: 8 000 (safe for 8 192-token models like text-embedding-3-small). */
+  maxEmbedTokens?: number;
 }
 
 export class PropertyGraphIndex {
@@ -28,7 +29,7 @@ export class PropertyGraphIndex {
   private readonly embedModel?: EmbedModel;
   private readonly embedKgNodes: boolean;
   private readonly showProgress: boolean;
-  private readonly maxEmbedChars: number;
+  private readonly maxEmbedTokens: number;
 
   constructor(options: PropertyGraphIndexOptions) {
     this.propertyGraphStore = options.propertyGraphStore;
@@ -36,7 +37,7 @@ export class PropertyGraphIndex {
     this.embedModel = options.embedModel;
     this.embedKgNodes = options.embedKgNodes ?? true;
     this.showProgress = options.showProgress ?? false;
-    this.maxEmbedChars = options.maxEmbedChars ?? DEFAULT_MAX_EMBED_CHARS;
+    this.maxEmbedTokens = options.maxEmbedTokens ?? DEFAULT_MAX_EMBED_TOKENS;
   }
 
   get graphStore(): PropertyGraphStore {
@@ -52,8 +53,15 @@ export class PropertyGraphIndex {
   }
 
   private truncateForEmbedding(text: string): string {
-    if (text.length <= this.maxEmbedChars) return text;
-    return text.slice(0, this.maxEmbedChars);
+    const enc = get_encoding("cl100k_base");
+    try {
+      const tokens = enc.encode(text);
+      if (tokens.length <= this.maxEmbedTokens) return text;
+      const truncated = tokens.slice(0, this.maxEmbedTokens);
+      return new TextDecoder().decode(enc.decode(truncated));
+    } finally {
+      enc.free();
+    }
   }
 
   async insert(nodes: TextNode[]): Promise<TextNode[]> {
