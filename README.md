@@ -311,6 +311,7 @@ for (const g of graphs) {
 | `kgExtractors` | `TransformComponent[]` | `[ImplicitPathExtractor]` | Pipeline of entity/relation extractors |
 | `embedKgNodes` | `boolean` | `true` | Generate embeddings for extracted entity nodes |
 | `showProgress` | `boolean` | `false` | Log progress during extraction |
+| `maxEmbedChars` | `number` | `28000` | Max characters per text sent to the embedding model. Texts exceeding this are truncated before embedding. Default is safe for 8192-token models like `text-embedding-3-small`. |
 
 ### Query/Retrieval Options
 

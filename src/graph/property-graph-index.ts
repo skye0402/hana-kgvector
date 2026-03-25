@@ -7,12 +7,19 @@ import { VectorContextRetriever, type EmbedModel } from "./retrievers/vector-con
 import { ImplicitPathExtractor } from "./extractors/implicit";
 import { createHash } from "crypto";
 
+/** Safe default: ~7 000 tokens for text-embedding-3-small (8 192 token limit). */
+const DEFAULT_MAX_EMBED_CHARS = 28_000;
+
 export interface PropertyGraphIndexOptions {
   propertyGraphStore: PropertyGraphStore;
   kgExtractors?: TransformComponent[];
   embedModel?: EmbedModel;
   embedKgNodes?: boolean;
   showProgress?: boolean;
+  /** Maximum characters to send to the embedding model per text.
+   *  Texts longer than this are truncated before embedding.
+   *  Default: 28 000 (~7 000 tokens, safe for 8 192-token models). */
+  maxEmbedChars?: number;
 }
 
 export class PropertyGraphIndex {
@@ -21,6 +28,7 @@ export class PropertyGraphIndex {
   private readonly embedModel?: EmbedModel;
   private readonly embedKgNodes: boolean;
   private readonly showProgress: boolean;
+  private readonly maxEmbedChars: number;
 
   constructor(options: PropertyGraphIndexOptions) {
     this.propertyGraphStore = options.propertyGraphStore;
@@ -28,6 +36,7 @@ export class PropertyGraphIndex {
     this.embedModel = options.embedModel;
     this.embedKgNodes = options.embedKgNodes ?? true;
     this.showProgress = options.showProgress ?? false;
+    this.maxEmbedChars = options.maxEmbedChars ?? DEFAULT_MAX_EMBED_CHARS;
   }
 
   get graphStore(): PropertyGraphStore {
@@ -40,6 +49,11 @@ export class PropertyGraphIndex {
 
   private computeHash(text: string): string {
     return createHash("md5").update(text).digest("hex");
+  }
+
+  private truncateForEmbedding(text: string): string {
+    if (text.length <= this.maxEmbedChars) return text;
+    return text.slice(0, this.maxEmbedChars);
   }
 
   async insert(nodes: TextNode[]): Promise<TextNode[]> {
@@ -94,7 +108,7 @@ export class PropertyGraphIndex {
     }
 
     if (this.embedKgNodes && this.embedModel && newKgNodes.length > 0) {
-      const nodeTexts = processedNodes.map((n) => n.text);
+      const nodeTexts = processedNodes.map((n) => this.truncateForEmbedding(n.text));
       const embeddings = await this.embedModel.getTextEmbeddingBatch(nodeTexts);
       for (let i = 0; i < processedNodes.length; i++) {
         processedNodes[i].embedding = embeddings[i];
