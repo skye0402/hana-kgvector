@@ -3,8 +3,13 @@ import type { TransformComponent, TextNode, SchemaDefinition } from "./types";
 import type { EntityNode, Relation, Triplet } from "../types";
 import { KG_NODES_KEY, KG_RELATIONS_KEY, createEntityNode, createRelation } from "../types";
 
+/** Minimal contract for a schema — compatible with Zod 3, Zod 4, or any parse-capable object. */
+export interface Parseable<T> {
+  parse(data: unknown): T;
+}
+
 export interface LLMClient {
-  structuredPredict<T>(schema: z.ZodType<T>, prompt: string): Promise<T>;
+  structuredPredict<T>(schema: Parseable<T>, prompt: string): Promise<T>;
 }
 
 export interface SchemaLLMPathExtractorOptions {
