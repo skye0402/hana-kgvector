@@ -308,7 +308,7 @@ for (const g of graphs) {
 |-----------|------|---------|-------------|
 | `propertyGraphStore` | `PropertyGraphStore` | Required | HANA-backed graph store instance |
 | `embedModel` | `EmbedModel` | - | Embedding model for vector search |
-| `kgExtractors` | `TransformComponent[]` | `[ImplicitPathExtractor]` | Pipeline of entity/relation extractors |
+| `kgExtractors` | `TransformComponent[]` | `[ImplicitPathExtractor]` | Pipeline of entity/relation extractors. Pass `[]` for embed-only mode (vector search without KG extraction). |
 | `embedKgNodes` | `boolean` | `true` | Generate embeddings for extracted entity nodes |
 | `showProgress` | `boolean` | `false` | Log progress during extraction |
 | `maxEmbedTokens` | `number` | `8000` | Max tokens per text sent to the embedding model. Texts exceeding this are truncated using tiktoken (`cl100k_base` encoding). Default includes a safety buffer for 8192-token models like `text-embedding-3-small`. |
@@ -367,7 +367,7 @@ const results = await index.query("Apple CEO", {
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `llm` | `LLMClient` | Required | LLM client for entity extraction |
+| `llm` | `LLMClient` | Required | LLM client for entity extraction. Uses the `Parseable<T>` interface (`{ parse(data: unknown): T }`) — compatible with both Zod 3 and Zod 4. |
 | `schema.entityTypes` | `string[]` | Required | Allowed entity types (e.g., `["PERSON", "ORG"]`) |
 | `schema.relationTypes` | `string[]` | Required | Allowed relation types (e.g., `["WORKS_AT"]`) |
 | `schema.validationSchema` | `[string,string,string][]` | - | Valid triplet patterns (e.g., `["PERSON", "WORKS_AT", "ORG"]`) |
@@ -421,6 +421,31 @@ This enables image/table chunks to be retrieved when nearby text matches a query
 - `pageNumber` — for same-page linking  
 - `chunkIndex` — for adjacent-chunk linking
 - `contentType` — (optional) for `crossTypeOnly` mode
+
+## Embed-Only Mode (Vector Search without KG Extraction)
+
+If you manage entities and relationships externally (e.g., from a programmatic parser), you can use `PropertyGraphIndex` purely for vector search by passing an empty extractors array:
+
+```typescript
+const index = new PropertyGraphIndex({
+  propertyGraphStore: graphStore,
+  embedModel,
+  kgExtractors: [],  // No LLM-based extraction
+});
+
+// Insert documents — only embeddings and document nodes are stored
+await index.insert([
+  { id: "doc_1", text: "Alice works at SAP.", metadata: {} },
+  { id: "doc_2", text: "SAP is headquartered in Walldorf.", metadata: {} },
+]);
+
+// Query via vector similarity
+const results = await index.query("Where is SAP located?");
+
+// Entities/relations can be inserted separately via the store
+await graphStore.upsertNodes([...]);
+await graphStore.upsertRelations([...]);
+```
 
 ## Multi-Tenancy
 

@@ -74,34 +74,39 @@ export class PropertyGraphIndex {
       });
     }
 
-    for (const node of processedNodes) {
-      if (!node.metadata[KG_NODES_KEY] && !node.metadata[KG_RELATIONS_KEY]) {
-        throw new Error(`Node ${node.id} has no KG_NODES_KEY or KG_RELATIONS_KEY after extraction`);
-      }
-    }
+    const hasExtractors = this.kgExtractors.length > 0;
 
     const kgNodesToInsert: EntityNode[] = [];
     const kgRelsToInsert: Relation[] = [];
+    let newKgNodes: EntityNode[] = [];
 
-    for (const node of processedNodes) {
-      const kgNodes = (node.metadata[KG_NODES_KEY] as EntityNode[]) ?? [];
-      const kgRels = (node.metadata[KG_RELATIONS_KEY] as Relation[]) ?? [];
-
-      for (const kgNode of kgNodes) {
-        kgNode.properties[TRIPLET_SOURCE_KEY] = node.id;
-      }
-      for (const kgRel of kgRels) {
-        kgRel.properties[TRIPLET_SOURCE_KEY] = node.id;
+    if (hasExtractors) {
+      for (const node of processedNodes) {
+        if (!node.metadata[KG_NODES_KEY] && !node.metadata[KG_RELATIONS_KEY]) {
+          throw new Error(`Node ${node.id} has no KG_NODES_KEY or KG_RELATIONS_KEY after extraction`);
+        }
       }
 
-      kgNodesToInsert.push(...kgNodes);
-      kgRelsToInsert.push(...kgRels);
+      for (const node of processedNodes) {
+        const kgNodes = (node.metadata[KG_NODES_KEY] as EntityNode[]) ?? [];
+        const kgRels = (node.metadata[KG_RELATIONS_KEY] as Relation[]) ?? [];
+
+        for (const kgNode of kgNodes) {
+          kgNode.properties[TRIPLET_SOURCE_KEY] = node.id;
+        }
+        for (const kgRel of kgRels) {
+          kgRel.properties[TRIPLET_SOURCE_KEY] = node.id;
+        }
+
+        kgNodesToInsert.push(...kgNodes);
+        kgRelsToInsert.push(...kgRels);
+      }
+
+      const kgNodeIds = [...new Set(kgNodesToInsert.map((n) => n.id))];
+      const existingKgNodes = await this.propertyGraphStore.get({ ids: kgNodeIds });
+      const existingKgNodeIds = new Set(existingKgNodes.map((n) => n.id));
+      newKgNodes = kgNodesToInsert.filter((n) => !existingKgNodeIds.has(n.id));
     }
-
-    const kgNodeIds = [...new Set(kgNodesToInsert.map((n) => n.id))];
-    const existingKgNodes = await this.propertyGraphStore.get({ ids: kgNodeIds });
-    const existingKgNodeIds = new Set(existingKgNodes.map((n) => n.id));
-    const newKgNodes = kgNodesToInsert.filter((n) => !existingKgNodeIds.has(n.id));
 
     if (this.propertyGraphStore.getDocumentNodes) {
       const existingDocumentNodes = await this.propertyGraphStore.getDocumentNodes(
@@ -115,13 +120,15 @@ export class PropertyGraphIndex {
       });
     }
 
-    if (this.embedKgNodes && this.embedModel && newKgNodes.length > 0) {
+    if (this.embedModel && processedNodes.length > 0) {
       const nodeTexts = processedNodes.map((n) => this.truncateForEmbedding(n.text));
       const embeddings = await this.embedModel.getTextEmbeddingBatch(nodeTexts);
       for (let i = 0; i < processedNodes.length; i++) {
         processedNodes[i].embedding = embeddings[i];
       }
+    }
 
+    if (this.embedKgNodes && this.embedModel && newKgNodes.length > 0) {
       const kgNodeTexts = newKgNodes.map((n) => `${n.label}: ${n.name}`);
       const kgEmbeddings = await this.embedModel.getTextEmbeddingBatch(kgNodeTexts);
       for (let i = 0; i < newKgNodes.length; i++) {
