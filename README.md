@@ -439,13 +439,30 @@ await index.insert([
   { id: "doc_2", text: "SAP is headquartered in Walldorf.", metadata: {} },
 ]);
 
-// Query via vector similarity
+// Query via vector similarity — returns matching document chunks directly
 const results = await index.query("Where is SAP located?");
+for (const r of results) {
+  console.log(`[${r.score.toFixed(3)}] ${r.node.text}`);
+}
 
 // Entities/relations can be inserted separately via the store
 await graphStore.upsertNodes([...]);
 await graphStore.upsertRelations([...]);
 ```
+
+When `kgExtractors` is empty, `query()` returns document chunks ranked by vector similarity. When entities and relations are also present, `query()` returns both document matches and graph-expanded triplets, merged and sorted by score.
+
+## Storage Architecture
+
+Each graph creates three storage areas:
+
+| Storage | Table | Contents |
+|---------|-------|----------|
+| **`_VECTORS`** | `{graphName}_VECTORS` | Unified query table. Stores entities (`NODE_TYPE='entity'`), document vectors (`NODE_TYPE='document'`), and relations (`NODE_TYPE='relation'` with indexed `source_id`/`target_id` columns). |
+| **`_NODES`** | `{graphName}_NODES` | Document node storage with full text, metadata, and content hashes for deduplication. |
+| **RDF graph** | SPARQL workspace | SPARQL-accessible triples (backward compat). Relations are also written here when HANA KG Engine is available. |
+
+`vectorQuery()` searches `_VECTORS` for rows with non-null embeddings (both entities and documents). `getRelMap()` queries `_VECTORS` for `NODE_TYPE='relation'` rows using indexed `source_id`/`target_id` lookups, with a SPARQL fallback for backward compatibility.
 
 ## Multi-Tenancy
 
