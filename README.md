@@ -274,6 +274,7 @@ Retrieve relevant context from the graph.
 | `graphName` | `string` | Required | RDF named graph identifier (e.g., `"my_knowledge_graph"`) |
 | `vectorTableName` | `string` | Auto-generated | Custom table name for vector storage |
 | `documentNodesTableName` | `string` | Auto-generated | Custom table name for document nodes |
+| `sqlBatchSize` | `number` | `500` | Prepared statement batch size for vector/document table writes. Can also be set with `HANA_KGVECTOR_SQL_BATCH_SIZE` |
 | `resetTables` | `boolean` | `false` | Drop and recreate tables on init (dev/test only) |
 
 ### Graph Discovery

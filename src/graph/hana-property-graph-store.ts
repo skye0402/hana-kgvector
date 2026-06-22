@@ -17,6 +17,8 @@ export interface HanaPropertyGraphStoreOptions {
   documentNodesTableName?: string;
   /** Optional, unused for dimensionless REAL_VECTOR columns (kept for backward compat logging). */
   vectorDimension?: number;
+  /** SQL execBatch chunk size for vector/document table writes. Defaults to HANA_KGVECTOR_SQL_BATCH_SIZE or 500. */
+  sqlBatchSize?: number;
   /** If true, will DROP and recreate tables on init (intended for tests/dev only). */
   resetTables?: boolean;
 }
@@ -26,6 +28,7 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
   private readonly graphName: string;
   private readonly vectorTableName: string;
   private readonly documentNodesTableName: string;
+  private readonly sqlBatchSize: number;
   private readonly resetTables: boolean;
   private initialized = false;
 
@@ -37,7 +40,14 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
     this.graphName = options.graphName;
     this.vectorTableName = options.vectorTableName ?? `${options.graphName.replace(/[^a-zA-Z0-9]/g, "_")}_VECTORS`;
     this.documentNodesTableName = options.documentNodesTableName ?? `${options.graphName.replace(/[^a-zA-Z0-9]/g, "_")}_NODES`;
+    this.sqlBatchSize = this.resolveSqlBatchSize(options.sqlBatchSize);
     this.resetTables = options.resetTables ?? false;
+  }
+
+  private resolveSqlBatchSize(configured?: number): number {
+    const raw = configured ?? Number(process.env.HANA_KGVECTOR_SQL_BATCH_SIZE);
+    if (!Number.isFinite(raw) || raw <= 0) return 500;
+    return Math.floor(raw);
   }
 
   private async ensureInitialized(): Promise<void> {
@@ -119,6 +129,66 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
     });
   }
 
+  private async execBatch(sql: string, paramRows: unknown[][]): Promise<void> {
+    if (paramRows.length === 0) return;
+
+    if (typeof (this.conn as any).prepare !== "function") {
+      for (const params of paramRows) {
+        await this.exec(sql, params);
+      }
+      return;
+    }
+
+    for (let i = 0; i < paramRows.length; i += this.sqlBatchSize) {
+      const chunk = paramRows.slice(i, i + this.sqlBatchSize);
+      const stmt = await new Promise<any>((resolve, reject) => {
+        (this.conn as any).prepare(sql, (err: unknown, prepared: unknown) => {
+          if (err) reject(err);
+          else resolve(prepared);
+        });
+      });
+
+      try {
+        if (typeof stmt.execBatch !== "function") {
+          for (const params of chunk) {
+            await this.exec(sql, params);
+          }
+          continue;
+        }
+
+        await new Promise<void>((resolve, reject) => {
+          stmt.execBatch(chunk, (err: unknown) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+      } finally {
+        try {
+          stmt.drop?.();
+        } catch {
+          // non-fatal cleanup
+        }
+      }
+    }
+  }
+
+  private uniqueBy<T>(items: T[], getId: (item: T) => string): T[] {
+    const byId = new Map<string, T>();
+
+    for (const item of items) {
+      byId.set(getId(item), item);
+    }
+
+    return Array.from(byId.values());
+  }
+
+  private sanitizeRecord(record: Record<string, unknown> | undefined): Record<string, unknown> {
+    const safeRecord: Record<string, unknown> = { ...(record ?? {}) };
+    delete (safeRecord as any).kg_nodes;
+    delete (safeRecord as any).kg_relations;
+    return safeRecord;
+  }
+
   private async sparqlExecute(sparql: string, headers = ""): Promise<unknown> {
     // Some HANA environments require OUT parameters (e.g. RESPONSE) to be bound.
     // The @sap/hana-client driver provides a proc statement helper which correctly
@@ -196,46 +266,55 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
     await this.ensureInitialized();
     if (nodes.length === 0) return;
 
-    const triples = nodes.map((n) => this.entityToTriples(n)).join("\n");
+    const uniqueNodes = this.uniqueBy(nodes, (node) => node.id);
+
+    const triples = uniqueNodes.map((n) => this.entityToTriples(n)).join("\n");
     const sparql = `INSERT DATA { GRAPH <${this.graphName}> { ${triples} } }`;
     await this.sparqlExecute(sparql);
 
-    for (const node of nodes) {
-      // Defensive: prevent circular references from being serialized into NCLOB
-      const safeProps: Record<string, unknown> = { ...(node.properties ?? {}) };
-      delete (safeProps as any).kg_nodes;
-      delete (safeProps as any).kg_relations;
+    const rowsWithEmbedding: unknown[][] = [];
+    const rowsWithoutEmbedding: unknown[][] = [];
 
-      const sql = node.embedding
-        ? `
-          UPSERT ${this.vectorTableName} (id, node_type, label, name, properties, embedding)
-          VALUES (?, 'entity', ?, ?, ?, TO_REAL_VECTOR(?))
-          WITH PRIMARY KEY
-        `
-        : `
-          UPSERT ${this.vectorTableName} (id, node_type, label, name, properties)
-          VALUES (?, 'entity', ?, ?, ?)
-          WITH PRIMARY KEY
-        `;
-      const params: unknown[] = [
-        node.id,
-        node.label,
-        node.name,
-        JSON.stringify(safeProps),
-      ];
+    for (const node of uniqueNodes) {
+      const safeProps = this.sanitizeRecord(node.properties);
+      const row = [node.id, node.label, node.name, JSON.stringify(safeProps)];
       if (node.embedding) {
-        params.push(JSON.stringify(node.embedding));
+        rowsWithEmbedding.push([...row, JSON.stringify(node.embedding)]);
+      } else {
+        rowsWithoutEmbedding.push(row);
       }
-      await this.exec(sql, params);
     }
+
+    await this.execBatch(
+      `
+        UPSERT ${this.vectorTableName} (id, node_type, label, name, properties)
+        VALUES (?, 'entity', ?, ?, ?)
+        WITH PRIMARY KEY
+      `,
+      rowsWithoutEmbedding
+    );
+
+    await this.execBatch(
+      `
+        UPSERT ${this.vectorTableName} (id, node_type, label, name, properties, embedding)
+        VALUES (?, 'entity', ?, ?, ?, TO_REAL_VECTOR(?))
+        WITH PRIMARY KEY
+      `,
+      rowsWithEmbedding
+    );
   }
 
   async upsertRelations(relations: Relation[]): Promise<void> {
     await this.ensureInitialized();
     if (relations.length === 0) return;
 
+    const uniqueRelations = this.uniqueBy(
+      relations,
+      (rel) => rel.id ?? `${rel.sourceId}_${rel.label}_${rel.targetId}`
+    );
+
     const nodeIds = new Set<string>();
-    for (const rel of relations) {
+    for (const rel of uniqueRelations) {
       nodeIds.add(rel.sourceId);
       nodeIds.add(rel.targetId);
     }
@@ -245,7 +324,7 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
 
     // Write to RDF graph (backward compat — kept for installations that use SPARQL)
     const lines: string[] = [];
-    for (const rel of relations) {
+    for (const rel of uniqueRelations) {
       const subj = nodeMap.get(rel.sourceId);
       const obj = nodeMap.get(rel.targetId);
       if (subj && obj) {
@@ -262,7 +341,8 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
     }
 
     // Write to _VECTORS table for reliable SQL-based querying via getRelMap()
-    for (const rel of relations) {
+    const relationRows: unknown[][] = [];
+    for (const rel of uniqueRelations) {
       const relId = rel.id ?? `${rel.sourceId}_${rel.label}_${rel.targetId}`;
       const safeProps: Record<string, unknown> = {
         sourceId: rel.sourceId,
@@ -272,12 +352,7 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
       delete (safeProps as any).kg_nodes;
       delete (safeProps as any).kg_relations;
 
-      const sql = `
-        UPSERT ${this.vectorTableName} (id, node_type, label, name, properties, source_id, target_id)
-        VALUES (?, 'relation', ?, ?, ?, ?, ?)
-        WITH PRIMARY KEY
-      `;
-      await this.exec(sql, [
+      relationRows.push([
         relId,
         rel.label,
         `${rel.sourceId} -> ${rel.targetId}`,
@@ -286,6 +361,15 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
         rel.targetId,
       ]);
     }
+
+    await this.execBatch(
+      `
+        UPSERT ${this.vectorTableName} (id, node_type, label, name, properties, source_id, target_id)
+        VALUES (?, 'relation', ?, ?, ?, ?, ?)
+        WITH PRIMARY KEY
+      `,
+      relationRows
+    );
   }
 
   async get(opts: { ids: string[] }): Promise<LabelledNode[]> {
@@ -498,49 +582,65 @@ export class HanaPropertyGraphStore implements PropertyGraphStore {
 
   async upsertDocumentNodes(nodes: DocumentNode[]): Promise<void> {
     await this.ensureInitialized();
-    for (const node of nodes) {
-      // Remove circular references from metadata before serialization
-      const { metadata, ...rest } = node;
-      const safeMetadata = { ...metadata };
-      delete (safeMetadata as any).kg_nodes;
-      delete (safeMetadata as any).kg_relations;
+    if (nodes.length === 0) return;
 
-      // Write to _NODES table (text + metadata storage)
-      const docSql = `
-        UPSERT ${this.documentNodesTableName} (id, text, metadata, hash, embedding)
-        VALUES (?, ?, ?, ?, ${node.embedding ? "TO_REAL_VECTOR(?)" : "NULL"})
-        WITH PRIMARY KEY
-      `;
-      const docParams: unknown[] = [
-        node.id,
-        node.text,
-        JSON.stringify(safeMetadata ?? {}),
-        node.hash ?? null,
-      ];
-      if (node.embedding) {
-        docParams.push(JSON.stringify(node.embedding));
-      }
-      await this.exec(docSql, docParams);
+    const uniqueNodes = this.uniqueBy(nodes, (node) => node.id);
+    const docRowsWithEmbedding: unknown[][] = [];
+    const docRowsWithoutEmbedding: unknown[][] = [];
+    const vectorRowsWithEmbedding: unknown[][] = [];
+    const vectorRowsWithoutEmbedding: unknown[][] = [];
 
-      // Also write to _VECTORS table so vectorQuery() can find document nodes.
-      // NODE_TYPE='document' distinguishes them from entity nodes.
-      const vecSql = node.embedding
-        ? `
-          UPSERT ${this.vectorTableName} (id, node_type, label, name, properties, embedding)
-          VALUES (?, 'document', 'DOCUMENT', ?, ?, TO_REAL_VECTOR(?))
-          WITH PRIMARY KEY
-        `
-        : `
-          UPSERT ${this.vectorTableName} (id, node_type, label, name, properties)
-          VALUES (?, 'document', 'DOCUMENT', ?, ?)
-          WITH PRIMARY KEY
-        `;
-      const vecParams: unknown[] = [node.id, node.id, JSON.stringify(safeMetadata ?? {})];
+    for (const node of uniqueNodes) {
+      const safeMetadata = this.sanitizeRecord(node.metadata);
+      const metadataJson = JSON.stringify(safeMetadata ?? {});
+      const docRow = [node.id, node.text, metadataJson, node.hash ?? null];
+      const vectorRow = [node.id, node.id, metadataJson];
+
       if (node.embedding) {
-        vecParams.push(JSON.stringify(node.embedding));
+        const embeddingJson = JSON.stringify(node.embedding);
+        docRowsWithEmbedding.push([...docRow, embeddingJson]);
+        vectorRowsWithEmbedding.push([...vectorRow, embeddingJson]);
+      } else {
+        docRowsWithoutEmbedding.push(docRow);
+        vectorRowsWithoutEmbedding.push(vectorRow);
       }
-      await this.exec(vecSql, vecParams);
     }
+
+    await this.execBatch(
+      `
+        UPSERT ${this.documentNodesTableName} (id, text, metadata, hash, embedding)
+        VALUES (?, ?, ?, ?, TO_REAL_VECTOR(?))
+        WITH PRIMARY KEY
+      `,
+      docRowsWithEmbedding
+    );
+
+    await this.execBatch(
+      `
+        UPSERT ${this.documentNodesTableName} (id, text, metadata, hash, embedding)
+        VALUES (?, ?, ?, ?, NULL)
+        WITH PRIMARY KEY
+      `,
+      docRowsWithoutEmbedding
+    );
+
+    await this.execBatch(
+      `
+        UPSERT ${this.vectorTableName} (id, node_type, label, name, properties, embedding)
+        VALUES (?, 'document', 'DOCUMENT', ?, ?, TO_REAL_VECTOR(?))
+        WITH PRIMARY KEY
+      `,
+      vectorRowsWithEmbedding
+    );
+
+    await this.execBatch(
+      `
+        UPSERT ${this.vectorTableName} (id, node_type, label, name, properties)
+        VALUES (?, 'document', 'DOCUMENT', ?, ?)
+        WITH PRIMARY KEY
+      `,
+      vectorRowsWithoutEmbedding
+    );
   }
 
   async getDocumentNodes(ids: string[]): Promise<DocumentNode[]> {
