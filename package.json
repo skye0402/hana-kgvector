@@ -1,6 +1,6 @@
 {
   "name": "hana-kgvector",
-  "version": "0.2.12",
+  "version": "0.3.0",
   "description": "A TypeScript framework for building hybrid GraphRAG applications using SAP HANA Cloud as the unified backend for knowledge graphs (RDF) and vector embeddings",
   "type": "module",
   "main": "dist/index.js",
@@ -36,7 +36,8 @@
     "dev": "tsx src/index.ts",
     "phase0:litellm": "tsx scripts/validate-litellm.ts",
     "phase0:hana": "tsx scripts/validate-hana.ts",
-    "smoke:pg": "tsx scripts/smoke-property-graph.ts"
+    "smoke:pg": "tsx scripts/smoke-property-graph.ts",
+    "smoke:native": "tsx scripts/smoke-native.ts"
   },
   "dependencies": {
     "openai": "^4.104.0",

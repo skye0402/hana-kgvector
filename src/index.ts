@@ -6,3 +6,4 @@ export type { GraphTables, HanaKgGraphInfo, HanaKgGraphTableSuffix } from "./han
 export { getGraphTables, listGraphs } from "./hana/graph-discovery";
 
 export * from "./graph";
+export * from "./native";

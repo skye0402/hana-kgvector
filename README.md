@@ -221,6 +221,32 @@ const nodes = await retriever.retrieve({ queryStr: "SAP employees" });
 
 ## Core Components
 
+### HANA-Native GraphRAG APIs
+
+For production-style HANA multimodel applications, prefer the HANA-native APIs. They keep vectors in a dedicated chunk table and use the HANA Knowledge Graph Engine as the source of truth for relationships.
+
+```typescript
+import {
+  HanaNativeVectorStore,
+  HanaNativeKnowledgeGraphStore,
+  HanaNativeGraphRagIndex,
+} from "hana-kgvector";
+
+const vectorStore = new HanaNativeVectorStore(conn, { graphName: "abap_ext_demo" });
+const knowledgeGraphStore = new HanaNativeKnowledgeGraphStore(conn, { graphName: "abap_ext_demo" });
+
+const index = new HanaNativeGraphRagIndex({
+  vectorStore,
+  knowledgeGraphStore,
+  embedModel, // any SDK/provider that implements getTextEmbedding + getTextEmbeddingBatch
+});
+
+await index.insertGraph({ entities, relations, chunks });
+const results = await index.query("Which reports read MARA?", { pathDepth: 2 });
+```
+
+The native APIs are LLM/SDK agnostic. Applications provide embeddings through the same minimal `EmbedModel` adapter used by the legacy API.
+
 ### PropertyGraphIndex
 
 Main entry point for building and querying knowledge graphs.
@@ -236,7 +262,7 @@ const index = new PropertyGraphIndex({
 
 ### HanaPropertyGraphStore
 
-HANA-backed implementation of PropertyGraphStore interface.
+Compatibility implementation of the PropertyGraphStore interface. It remains supported for existing applications and examples.
 
 ```typescript
 const store = new HanaPropertyGraphStore(conn, {
@@ -454,6 +480,19 @@ await graphStore.upsertRelations([...]);
 When `kgExtractors` is empty, `query()` returns document chunks ranked by vector similarity. When entities and relations are also present, `query()` returns both document matches and graph-expanded triplets, merged and sorted by score.
 
 ## Storage Architecture
+
+### HANA-Native Storage
+
+The native path uses two storage areas per graph:
+
+| Storage | Table / Graph | Contents |
+|---------|---------------|----------|
+| **Chunks** | `{graphName}_CHUNKS` | Source text chunks, metadata, hashes, and `REAL_VECTOR` embeddings. |
+| **RDF graph** | `<graphName>` | Entities, typed relations, relation properties, and links from entities to source chunks. |
+
+Retrieval runs vector search over chunks and expands the result through the RDF graph with HANA Knowledge Graph queries.
+
+### Legacy Storage
 
 Each graph creates three storage areas:
 

@@ -7,12 +7,13 @@ A step-by-step guide to building a hybrid GraphRAG application with SAP HANA Clo
 1. [Prerequisites](#prerequisites)
 2. [Setup](#setup)
 3. [Step 1: Connect to HANA Cloud](#step-1-connect-to-hana-cloud)
-4. [Step 2: Create the PropertyGraphIndex](#step-2-create-the-propertygraphindex)
-5. [Step 3: Insert Documents](#step-3-insert-documents)
-6. [Step 4: Query the Knowledge Graph](#step-4-query-the-knowledge-graph)
-7. [Step 5: Tune Retrieval Parameters](#step-5-tune-retrieval-parameters)
-8. [Step 6: Advanced Usage](#step-6-advanced-usage)
-9. [Troubleshooting](#troubleshooting)
+4. [Recommended: HANA-Native GraphRAG](#recommended-hana-native-graphrag)
+5. [Legacy: Create the PropertyGraphIndex](#legacy-create-the-propertygraphindex)
+6. [Step 3: Insert Documents](#step-3-insert-documents)
+7. [Step 4: Query the Knowledge Graph](#step-4-query-the-knowledge-graph)
+8. [Step 5: Tune Retrieval Parameters](#step-5-tune-retrieval-parameters)
+9. [Step 6: Advanced Usage](#step-6-advanced-usage)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -99,7 +100,115 @@ main().catch(console.error);
 
 ---
 
-## Step 2: Create the PropertyGraphIndex
+## Recommended: HANA-Native GraphRAG
+
+For new production-oriented projects, prefer the native APIs. They use a dedicated `{graphName}_CHUNKS` vector table for source text and the HANA Knowledge Graph Engine as the source of truth for relationships.
+
+This path is LLM/SDK agnostic: you provide embeddings through a tiny adapter, and your app can extract entities/relations however it wants.
+
+```typescript
+import {
+  createHanaConnection,
+  HanaNativeVectorStore,
+  HanaNativeKnowledgeGraphStore,
+  HanaNativeGraphRagIndex,
+  createEntityNode,
+  createRelation,
+} from "hana-kgvector";
+import OpenAI from "openai";
+import dotenv from "dotenv";
+
+dotenv.config({ path: ".env.local" });
+
+const conn = await createHanaConnection({
+  host: process.env.HANA_HOST!,
+  user: process.env.HANA_USER!,
+  password: process.env.HANA_PASSWORD!,
+});
+
+const openai = new OpenAI({
+  apiKey: process.env.LITELLM_API_KEY,
+  baseURL: process.env.LITELLM_PROXY_URL,
+});
+
+const embedModel = {
+  async getTextEmbedding(text: string) {
+    const res = await openai.embeddings.create({
+      model: process.env.DEFAULT_EMBEDDING_MODEL ?? "text-embedding-3-small",
+      input: text,
+      encoding_format: "base64",
+    });
+    return res.data[0].embedding;
+  },
+  async getTextEmbeddingBatch(texts: string[]) {
+    if (texts.length === 0) return [];
+    const res = await openai.embeddings.create({
+      model: process.env.DEFAULT_EMBEDDING_MODEL ?? "text-embedding-3-small",
+      input: texts,
+      encoding_format: "base64",
+    });
+    return res.data.map((d) => d.embedding);
+  },
+};
+
+const graphName = "demo_native_graph";
+const index = new HanaNativeGraphRagIndex({
+  vectorStore: new HanaNativeVectorStore(conn, { graphName }),
+  knowledgeGraphStore: new HanaNativeKnowledgeGraphStore(conn, { graphName }),
+  embedModel,
+});
+
+const alice = createEntityNode({
+  label: "PERSON",
+  name: "Alice",
+  properties: { source_object: "doc_1" },
+});
+const sap = createEntityNode({
+  label: "ORGANIZATION",
+  name: "SAP",
+  properties: { source_object: "doc_1" },
+});
+const worksAt = createRelation({
+  label: "WORKS_AT",
+  sourceId: alice.id,
+  targetId: sap.id,
+  properties: { source_object: "doc_1" },
+});
+
+const chunks = [
+  {
+    id: "doc_1_chunk_0",
+    text: "Alice works at SAP in Walldorf.",
+    metadata: { objectName: "doc_1", fileName: "doc_1.txt", chunkIndex: 0 },
+  },
+];
+
+const embeddings = await embedModel.getTextEmbeddingBatch(chunks.map((c) => c.text));
+
+await index.insertGraph({
+  entities: [alice, sap],
+  relations: [worksAt],
+  chunks: chunks.map((chunk, i) => ({ ...chunk, embedding: embeddings[i] })),
+});
+
+const results = await index.query("Who works at SAP?", {
+  similarityTopK: 5,
+  pathDepth: 2,
+  limit: 10,
+});
+
+for (const result of results) {
+  console.log(`[${result.score.toFixed(3)}] ${result.node.text}`);
+}
+```
+
+Use `pnpm smoke:native` in this repository to run a live HANA smoke test for this path.
+
+---
+
+## Legacy: Create the PropertyGraphIndex
+
+The `PropertyGraphIndex` API remains supported for existing applications and examples. It stores entities, documents, and relation lookup rows in the legacy `_VECTORS`/`_NODES` layout while also writing RDF triples when the HANA KG Engine is available.
 
 The `PropertyGraphIndex` is the main entry point. It needs:
 - A **graph store** (where entities and relations are stored)
