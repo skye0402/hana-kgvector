@@ -1,6 +1,6 @@
 {
   "name": "hana-kgvector",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "description": "A TypeScript framework for building hybrid GraphRAG applications using SAP HANA Cloud as the unified backend for knowledge graphs (RDF) and vector embeddings",
   "type": "module",
   "main": "dist/index.js",

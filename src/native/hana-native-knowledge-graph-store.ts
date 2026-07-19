@@ -143,11 +143,13 @@ export class HanaNativeKnowledgeGraphStore {
     const limit = options.limit ?? 100;
     const seedValues = options.seedEntities.map((entity) => this.entityUri(entity)).join(" ");
     const relFilter = options.relType ? `?rel <${HKV}prop/label> "${escapeSparqlLiteral(options.relType)}" .` : "";
-    const path = `VALUES ?seed { ${seedValues} }
-      ${this.buildBoundedEntityExpansion("?seed", "?neighbor", depth)}
-      { BIND(?neighbor AS ?source) ?source ?predicate ?target . }
-      UNION
-      { BIND(?neighbor AS ?target) ?source ?predicate ?target . }`;
+    const path = this.buildBoundedEntityExpansion("?seed", "?neighbor", depth, {
+      seedValues,
+      suffixes: [
+        "{{node}} ?predicate ?target . BIND({{node}} AS ?source)",
+        "?source ?predicate {{node}} . BIND({{node}} AS ?target)",
+      ],
+    });
 
     const rows = await this.sparqlTable(`
       SELECT ?source ?sourceId ?sourceLabel ?sourceName ?sourceProps
@@ -204,8 +206,10 @@ export class HanaNativeKnowledgeGraphStore {
     const depth = Math.max(1, options?.depth ?? 1);
     const limit = options?.limit ?? 100;
     const chunkValues = chunkIds.map((id) => this.chunkUri(id)).join(" ");
-    const path = `?chunk <${HKV}rel/DESCRIBES_ENTITY> ?seed .
-      ${this.buildBoundedEntityExpansion("?seed", "?source", depth - 1)}`;
+    const path = this.buildBoundedEntityExpansion("?seed", "?source", depth - 1, {
+      seedPattern: `?chunk <${HKV}rel/DESCRIBES_ENTITY> ?seed .`,
+      suffixes: ["{{node}} ?predicate ?target . BIND({{node}} AS ?source)"],
+    });
 
     const rows = await this.sparqlTable(`
       SELECT ?chunk ?sourceId ?sourceLabel ?sourceName ?sourceProps
@@ -215,7 +219,6 @@ export class HanaNativeKnowledgeGraphStore {
       WHERE {
         VALUES ?chunk { ${chunkValues} }
         ${path}
-        ?source ?predicate ?target .
         ?source <${RDF_TYPE}> <${HKV}type/ENTITY> .
         ?target <${RDF_TYPE}> <${HKV}type/ENTITY> .
         ?source <${HKV}prop/id> ?sourceId ; <${HKV}prop/label> ?sourceLabel ; <${HKV}prop/name> ?sourceName .
@@ -316,9 +319,31 @@ export class HanaNativeKnowledgeGraphStore {
     ];
   }
 
-  private buildBoundedEntityExpansion(seedVar: string, outVar: string, depth: number): string {
+  private buildBoundedEntityExpansion(
+    seedVar: string,
+    outVar: string,
+    depth: number,
+    options?: { seedValues?: string; seedPattern?: string; suffixes?: string[] }
+  ): string {
     const boundedDepth = Math.max(0, Math.min(depth, 6));
-    const branches = [`{ BIND(${seedVar} AS ${outVar}) }`];
+    const seedClause = options?.seedValues ? `VALUES ${seedVar} { ${options.seedValues} }` : (options?.seedPattern ?? "");
+    const suffixes = options?.suffixes?.length ? options.suffixes : [""];
+    const branches: string[] = [];
+
+    const addBranches = (prefix: string, current: string) => {
+      for (const suffix of suffixes) {
+        if (suffix) {
+          const resolvedSuffix = suffix.includes("{{node}}")
+            ? suffix.replaceAll("{{node}}", current)
+            : suffix.replaceAll(outVar, current);
+          branches.push(`{ ${prefix} ${resolvedSuffix} }`);
+        } else {
+          branches.push(`{ ${prefix} BIND(${current} AS ${outVar}) }`);
+        }
+      }
+    };
+
+    addBranches(seedClause, seedVar);
 
     for (let hop = 1; hop <= boundedDepth; hop++) {
       const variables = Array.from({ length: hop }, (_unused, index) => `?hop${hop}_${index}`);
@@ -331,7 +356,7 @@ export class HanaNativeKnowledgeGraphStore {
         current = next;
       }
 
-      branches.push(`{ ${pathParts.join(" ")} BIND(${current} AS ${outVar}) }`);
+      addBranches(`${seedClause} ${pathParts.join(" ")}`, current);
     }
 
     return branches.join("\nUNION\n");
