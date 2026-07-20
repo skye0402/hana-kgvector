@@ -336,7 +336,15 @@ export class HanaNativeKnowledgeGraphStore {
           const resolvedSuffix = suffix.includes("{{node}}")
             ? suffix.replaceAll("{{node}}", current)
             : suffix.replaceAll(outVar, current);
-          branches.push(`{ ${prefix} ${resolvedSuffix} }`);
+          // Ensure outVar is bound in every UNION branch. Without this, suffixes that
+          // reference the reached node via {{node}} (binding only their own ?source/?target)
+          // leave outVar unbound, which HANA's SPARQL validator rejects across a multi-branch
+          // UNION ("Named variable not in contained WHERE clause"). Skip when the resolved
+          // suffix already binds outVar, to avoid an illegal double BIND of the same variable.
+          const alreadyBindsOut =
+            current === outVar || new RegExp(`BIND\\([^)]*AS\\s+\\${outVar}\\s*\\)`).test(resolvedSuffix);
+          const bindOut = alreadyBindsOut ? "" : ` BIND(${current} AS ${outVar})`;
+          branches.push(`{ ${prefix} ${resolvedSuffix}${bindOut} }`);
         } else {
           branches.push(`{ ${prefix} BIND(${current} AS ${outVar}) }`);
         }
